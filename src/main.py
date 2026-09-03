@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+
 from src.core.config import settings
 
 app = FastAPI(
@@ -6,6 +7,7 @@ app = FastAPI(
     description="API do projeto Caça Placa",
     version=settings.VERSION,
 )
+
 
 @app.get("/")
 def health_check():
