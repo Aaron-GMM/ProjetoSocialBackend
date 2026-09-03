@@ -1,0 +1,51 @@
+name: Caça Placa Backend CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test-and-lint:
+    runs-on: ubuntu-latest
+    
+    services:
+      db:
+        image: postgis/postgis:15-3.3-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cacaplaca_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Código
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v2
+        with:
+          enable-cache: true
+
+      - name: Instalar Dependências
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Linter & Format (Ruff)
+        run: ruff check src tests
+
+      - name: Testes e Cobertura (Quebra se < 85%)
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/cacaplaca_test
+        run: pytest
