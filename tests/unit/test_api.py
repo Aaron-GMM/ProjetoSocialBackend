@@ -1,7 +1,10 @@
 from fastapi.testclient import TestClient
+
+from src.infrastructure.database.connection import get_session
 from src.main import app
 
 client = TestClient(app)
+
 
 def test_health_check():
     response = client.get("/")
@@ -9,7 +12,6 @@ def test_health_check():
     assert response.json()["status"] == "ok"
     assert "project" in response.json()
 
-from src.infrastructure.database.connection import get_session
 
 def test_database_connection_yields():
     generator = get_session()
