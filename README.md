@@ -23,7 +23,7 @@ A estrutura atual em `src/` segue:
 
 ## Comandos Rápidos (Makefile)
 
-O projeto inclui um `Makefile` recheado de atalhos para facilitar o desenvolvimento:
+ Facilitar o desenvolvimento e a configuração :
 
 | Comando | Descrição |
 |---------|-----------|
