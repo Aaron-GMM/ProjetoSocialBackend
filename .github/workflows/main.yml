@@ -7,7 +7,31 @@ on:
     branches: [ "main" ]
 
 jobs:
-  test-and-lint:
+  lint:
+    name: Lint & Formatação
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Código
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v2
+        with:
+          enable-cache: true
+
+      - name: Instalar Dependências de Lint
+        run: uv pip install --system ruff
+
+      - name: Linter & Format (Ruff)
+        run: ruff check src tests
+
+  test:
+    name: Testes
     runs-on: ubuntu-latest
     
     services:
@@ -41,9 +65,6 @@ jobs:
 
       - name: Instalar Dependências
         run: uv pip install --system -e ".[dev]"
-
-      - name: Linter & Format (Ruff)
-        run: ruff check src tests
 
       - name: Testes e Cobertura (Quebra se < 85%)
         env:
