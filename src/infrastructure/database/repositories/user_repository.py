@@ -46,7 +46,7 @@ class UserRepository:
             result = session.exec(statement)
             return result.first()
     
-    def get_user_by_email(self, email: str) -> User | None:
+    def get_user_by_email_case_insensitive(self, email: str) -> User | None:
         """
         Busca um usuário pelo email.
 
@@ -57,31 +57,10 @@ class UserRepository:
             User | None: Objeto User se encontrado, None caso contrário.
         """
         with Session(engine) as session:
-            statement = select(User).where(User.email == email)
+            statement = select(User).where(lower(User.email) == lower(email))
             result = session.exec(statement)
             return result.first()
 
-    def get_user_by(self, attribute: str, value: str | int) -> User | None:
-        """
-        Busca um usuário por um atributo específico.
-
-        Args:
-            attribute: Nome do atributo do User para buscar (ex: 'email', 'matricula').
-            value: Valor do atributo a ser buscado.
-
-        Returns:
-            User | None: Objeto User se encontrado, None caso contrário.
-
-        Raises:
-            ValueError: Se o atributo informado não existir no modelo User.
-        """
-        if not hasattr(User, attribute):
-            raise ValueError(f"Invalid attribute: {attribute}")
-            
-        with Session(engine) as session:
-            statement = select(User).where(getattr(User, attribute) == value)
-            result = session.exec(statement)
-            return result.first()
     
     def get_all_users(self) -> list[User]:
         """
