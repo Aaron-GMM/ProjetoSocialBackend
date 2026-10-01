@@ -17,7 +17,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 
 COPY src/ ./src/
-COPY alembic/ ./alembic/
+COPY ./src/infrastructure/database/alembic/ ./alembic/
 COPY alembic.ini ./
 
 EXPOSE 8000
