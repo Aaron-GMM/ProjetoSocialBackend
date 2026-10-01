@@ -8,7 +8,6 @@ class User(SQLModel, table=True):
     Attributes:
         id: ID do usuário
         nome: Nome do usuário
-        matricula: Matrícula do usuário
         email: Email do usuário
         password_hash: Hash da senha do usuário
         role: Função do usuário
@@ -17,7 +16,6 @@ class User(SQLModel, table=True):
     
     id: int = Field(default=None, primary_key=True, nullable=False, description="ID do usuário")
     nome: str = Field(nullable=False, description="Nome do usuário")
-    matricula: str = Field(nullable=False, index=True, description="Matrícula do usuário")
     email: str = Field(nullable=False, unique=True, index=True, description="Email do usuário")
     password_hash: str = Field(nullable=False, description="Hash da senha do usuário")
     role: Role = Field(nullable=False, default=Role.AGENTE, description="Função do usuário")
