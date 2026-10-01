@@ -21,7 +21,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.create_table('user',
+    op.create_table('users',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('nome', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('matricula', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
@@ -30,8 +30,8 @@ def upgrade() -> None:
     sa.Column('role', sa.Enum('ADMINISTRADOR', 'AGENTE', name='role'), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_user_email'), 'user', ['email'], unique=True)
-    op.create_index(op.f('ix_user_matricula'), 'user', ['matricula'], unique=False)
+    op.create_index(op.f('ix_user_email'), 'users', ['email'], unique=True)
+    op.create_index(op.f('ix_user_matricula'), 'users', ['matricula'], unique=False)
     # ### end Alembic commands ###
 
 

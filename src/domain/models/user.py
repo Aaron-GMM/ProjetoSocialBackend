@@ -13,7 +13,7 @@ class User(SQLModel, table=True):
         password_hash: Hash da senha do usuário
         role: Função do usuário
     """
-    __tablename__ = "user"
+    __tablename__ = "users"
     
     id: int = Field(default=None, primary_key=True, nullable=False, description="ID do usuário")
     nome: str = Field(nullable=False, description="Nome do usuário")
