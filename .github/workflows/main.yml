@@ -2,9 +2,9 @@ name: Caça Placa Backend CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
 
 jobs:
   lint:
@@ -18,6 +18,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
 
       - name: Instalar uv
         uses: astral-sh/setup-uv@v2
@@ -50,8 +51,10 @@ jobs:
           --health-retries 5
 
     steps:
-      - name: Checkout Código
+      - name: Checkout Código (Com Histórico)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -66,7 +69,11 @@ jobs:
       - name: Instalar Dependências
         run: uv pip install --system -e ".[dev]"
 
-      - name: Testes e Cobertura (Quebra se < 85%)
+      - name: Executar Pytest (Gera coverage.xml)
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/cacaplaca_test
         run: pytest
+
+      - name: Diff-Cover (Quebra se < 85% nas linhas novas do PR)
+        if: github.event_name == 'pull_request'
+        run: diff-cover coverage.xml --compare-branch=origin/${{ github.base_ref }} --fail-under=85
