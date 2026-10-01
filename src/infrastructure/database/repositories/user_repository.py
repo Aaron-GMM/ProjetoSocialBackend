@@ -1,7 +1,8 @@
-from sqlmodel import Session, select, insert
+from sqlmodel import Session, insert, select
 
 from src.domain.models.user import User
 from src.infrastructure.database.connection import engine
+
 
 class UserRepository:
     """
@@ -57,7 +58,7 @@ class UserRepository:
             User | None: Objeto User se encontrado, None caso contrário.
         """
         with Session(engine) as session:
-            statement = select(User).where(lower(User.email) == lower(email))
+            statement = select(User).where(User.email.lower() == email.lower())
             result = session.exec(statement)
             return result.first()
 

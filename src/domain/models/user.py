@@ -1,5 +1,7 @@
-from sqlmodel import SQLModel, Field
+from sqlmodel import Field, SQLModel
+
 from ..enums.role import Role
+
 
 class User(SQLModel, table=True):
     """

@@ -1,10 +1,9 @@
 import os
 from logging.config import fileConfig
-from sqlalchemy import engine_from_config, pool
-from alembic import context
-from sqlmodel import SQLModel
 
-from src.domain.models.user import User 
+from alembic import context
+from sqlalchemy import engine_from_config, pool
+from sqlmodel import SQLModel
 
 config = context.config
 
