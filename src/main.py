@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from src.api.routes import auth, users
 from src.core.config import settings
 
 app = FastAPI(
@@ -7,6 +8,9 @@ app = FastAPI(
     description="API do projeto Caça Placa",
     version=settings.VERSION,
 )
+
+app.include_router(auth.router)
+app.include_router(users.router)
 
 
 @app.get("/")
