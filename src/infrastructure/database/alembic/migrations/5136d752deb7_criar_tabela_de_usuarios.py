@@ -24,19 +24,16 @@ def upgrade() -> None:
     op.create_table('users',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('nome', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('matricula', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('email', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('password_hash', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('role', sa.Enum('ADMINISTRADOR', 'AGENTE', name='role'), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_user_email'), 'users', ['email'], unique=True)
-    op.create_index(op.f('ix_user_matricula'), 'users', ['matricula'], unique=False)
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
-    op.drop_index(op.f('ix_user_matricula'), table_name='user')
     op.drop_index(op.f('ix_user_email'), table_name='user')
     op.drop_table('user')
     # ### end Alembic commands ###
