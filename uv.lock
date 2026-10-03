@@ -103,6 +103,7 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "diff-cover" },
     { name = "httpx2" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -119,6 +120,7 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.13.0" },
     { name = "asyncpg", specifier = ">=0.29.0" },
+    { name = "diff-cover", marker = "extra == 'dev'", specifier = ">=10.6.0" },
     { name = "fastapi", specifier = ">=0.111.0" },
     { name = "geoalchemy2", specifier = ">=0.15.0" },
     { name = "httpx2", marker = "extra == 'dev'", specifier = ">=0.28.0" },
