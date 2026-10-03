@@ -3,6 +3,7 @@ from sqlmodel import Session, SQLModel, create_engine
 
 TEST_DATABASE_URL = "sqlite:///:memory:"
 
+
 @pytest.fixture(scope="session")
 def engine():
     """
@@ -13,7 +14,8 @@ def engine():
     SQLModel.metadata.create_all(engine)
     yield engine
     SQLModel.metadata.drop_all(engine)
-    
+
+
 @pytest.fixture(scope="function")
 def db_session(engine):
     """
@@ -22,7 +24,7 @@ def db_session(engine):
     """
     connection = engine.connect()
     transaction = connection.begin()
-    
+
     session = Session(bind=connection)
     session.begin()
 
