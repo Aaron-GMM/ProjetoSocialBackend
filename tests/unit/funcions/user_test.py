@@ -139,6 +139,8 @@ def test_delete_user(db_session):
 
     # Act
     response = delete_user(db_session, user.id)
+    response2 = delete_user(db_session, user.id)
 
     # Assert
     assert response is True
+    assert response2 is False
