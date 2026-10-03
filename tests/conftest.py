@@ -1,35 +1,51 @@
-import pytest
-from sqlmodel import Session, SQLModel, create_engine
+import os
 
-TEST_DATABASE_URL = "sqlite:///:memory:"
+import pytest_asyncio
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlmodel import SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+# Pega a URL do ambiente (geralmente injetada pelo CI/Docker)
+# Se não houver, tenta conectar num Postgres local
+TEST_DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/cacaplaca"
+)
+
+# Garante que use o asyncpg
+if TEST_DATABASE_URL.startswith("postgresql://"):
+    TEST_DATABASE_URL = TEST_DATABASE_URL.replace(
+        "postgresql://", "postgresql+asyncpg://"
+    )
 
 
-@pytest.fixture(scope="session")
-def engine():
+@pytest_asyncio.fixture(scope="function")
+async def engine():
     """
-    Cria o engine e cria todas as tabelas antes dos testes.
+    Cria o engine assíncrono e cria todas as tabelas antes dos testes.
     Depois, remove todas as tabelas após os testes.
     """
-    engine = create_engine(TEST_DATABASE_URL)
-    SQLModel.metadata.create_all(engine)
+    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+
+    async with engine.begin() as conn:
+        # Habilita a extensão postgis no banco de testes (caso ainda não tenha)
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis;"))
+        await conn.run_sync(SQLModel.metadata.create_all)
+
     yield engine
-    SQLModel.metadata.drop_all(engine)
+
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.drop_all)
+
+    await engine.dispose()
 
 
-@pytest.fixture(scope="function")
-def db_session(engine):
+@pytest_asyncio.fixture(scope="function")
+async def db_session(engine):
     """
-    Cria uma nova sessão para cada teste envolvida em uma transação.
-    Ao final do teste, faz o ROLLBACK, garantindo isolamento total.
+    Fornece uma sessão assíncrona limpa.
+    O isolamento é garantido pela recriação do banco a cada teste
+    (engine scope=function).
     """
-    connection = engine.connect()
-    transaction = connection.begin()
-
-    session = Session(bind=connection)
-    session.begin()
-
-    yield session
-
-    session.close()
-    transaction.rollback()
-    connection.close()
+    async with AsyncSession(engine) as session:
+        yield session
