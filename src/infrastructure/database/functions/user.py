@@ -3,11 +3,11 @@ from sqlmodel import Session, func, select
 from src.domain.models.user import User
 
 
-def get_user_by_email_case_insensitive(db: Session, email: str) -> User | None:
+async def get_user_by_email_case_insensitive(db: Session, email: str) -> User | None:
     """Busca um usuário no banco pelo email."""
     statement = select(User).where(func.lower(User.email) == func.lower(email))
-
-    return db.exec(statement).first()
+    result = await db.exec(statement)
+    return result.first()
 
 
 def get_user_by_id(db: Session, user_id: int) -> User | None:
