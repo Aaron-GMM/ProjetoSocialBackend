@@ -155,3 +155,26 @@ async def test_delete_user(db_session):
     # Assert
     assert response is True
     assert response2 is False
+
+
+@pytest.mark.asyncio
+async def test_update_user_partial(db_session):
+    # Arrange
+    user = User(
+        nome="John Doe",
+        email="john.doe@example.com",
+        password_hash="password_hashed",
+    )
+    user = await create_user(db_session, user)
+
+    # Act
+    from src.infrastructure.database.functions.user import update_user_partial
+
+    update_data = {"nome": "Partial Jane", "is_active": False}
+    user = await update_user_partial(db_session, user.id, update_data)
+
+    # Assert
+    assert user.nome == "Partial Jane"
+    assert user.is_active is False
+    assert user.email == "john.doe@example.com"
+    assert user.id is not None

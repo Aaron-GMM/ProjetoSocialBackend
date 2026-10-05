@@ -28,3 +28,6 @@ class User(SQLModel, table=True):
     role: Role = Field(
         nullable=False, default=Role.AGENTE, description="Função do usuário"
     )
+    is_active: bool = Field(
+        default=True, nullable=False, description="Status de atividade do usuário"
+    )
