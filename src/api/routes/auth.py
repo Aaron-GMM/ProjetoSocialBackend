@@ -18,18 +18,21 @@ router = APIRouter(prefix="/auth", tags=["Autenticação"])
     "/login",
     response_model=TokenResponse,
     summary="Realiza login e emite token JWT",
+    description=(
+        "Endpoint padrão do OAuth2 para autenticação de usuários.\n\n"
+        "**Regras de Negócio:**\n"
+        "- O frontend deve enviar `username` (email) e `password` no formato "
+        "`application/x-www-form-urlencoded`.\n"
+        "- Se as credenciais forem válidas, a API emite um `access_token` JWT.\n"
+        "- O token contém a `role` e o `sub` (ID do usuário) e deve ser usado nas "
+        "requisições subsequentes via cabeçalho `Authorization: Bearer <token>`."
+    ),
+    response_description="Objeto contendo o Token JWT de Acesso e seu tipo.",
 )
 async def login(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: Session = Depends(get_session),
 ) -> TokenResponse:
-    """
-    Recebe email/senha e retorna o JWT.
-    Fluxo:
-    1. Chama functions.user.get_user_by_email
-    2. Usa core.security.verify_password
-    3. Retorna core.security.create_access_token
-    """
     unauthorized_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="E-mail ou senha incorretos.",

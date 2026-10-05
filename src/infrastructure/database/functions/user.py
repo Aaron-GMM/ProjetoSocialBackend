@@ -60,6 +60,23 @@ async def update_user(db: AsyncSession, user_id: int, user_data: User) -> User |
     return user
 
 
+async def update_user_partial(
+    db: AsyncSession, user_id: int, user_data: dict
+) -> User | None:
+    """Atualiza parcialmente um usuário no banco."""
+    statement = select(User).where(User.id == user_id)
+    result = await db.exec(statement)
+    user = result.first()
+
+    if user:
+        for key, value in user_data.items():
+            setattr(user, key, value)
+        await db.commit()
+        await db.refresh(user)
+
+    return user
+
+
 async def delete_user(db: AsyncSession, user_id: int) -> bool:
     """Deleta um usuário do banco."""
     statement = select(User).where(User.id == user_id)
