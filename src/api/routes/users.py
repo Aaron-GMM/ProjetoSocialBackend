@@ -4,10 +4,17 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.api.deps import get_current_user, require_admin
-from src.application.schemas.user_schema import UserResponse, UserUpdate, UserUpdateMe
+from src.application.schemas.user_schema import (
+    UserCreate,
+    UserResponse,
+    UserUpdate,
+    UserUpdateMe,
+)
+from src.core.security import generate_random_password, get_password_hash
 from src.domain.models.user import User
 from src.infrastructure.database.connection import get_session
 from src.infrastructure.database.functions import user as user_functions
+from src.infrastructure.services.email import send_email
 
 router = APIRouter(prefix="/users", tags=["Usuários"])
 
@@ -58,6 +65,57 @@ async def update_users_me(
         )
 
     return updated_user
+
+
+@router.post(
+    "/",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Cadastra um novo usuário com senha gerada (Apenas ADMIN)",
+    description=(
+        "Cria a conta de um novo Agente a partir de nome e e-mail.\n\n"
+        "**Regras de Negócio:**\n"
+        "- Requer nível de acesso `ADMINISTRADOR`.\n"
+        "- A senha **não** vem no request: o backend gera uma senha forte "
+        "aleatória, persiste apenas o seu hash e a envia por e-mail ao novo "
+        "usuário (envio simulado no console).\n"
+        "- A resposta **nunca** retorna a senha em texto plano."
+    ),
+    response_description="Dados do usuário criado (sem senha).",
+)
+async def create_user(
+    user_create: UserCreate,
+    db: Annotated[AsyncSession, Depends(get_session)],
+    current_user: Annotated[User, Depends(require_admin)],
+):
+    existing_user = await user_functions.get_user_by_email_case_insensitive(
+        db, user_create.email
+    )
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Já existe um usuário cadastrado com este e-mail.",
+        )
+
+    raw_password = generate_random_password()
+    new_user = User(
+        nome=user_create.nome,
+        email=user_create.email,
+        password_hash=get_password_hash(raw_password),
+    )
+    created_user = await user_functions.create_user(db, new_user)
+
+    send_email(
+        recipient=created_user.email,
+        subject="Sua conta no Caça Placa foi criada",
+        body=(
+            f"Olá, {created_user.nome}!\n\n"
+            f"Sua senha temporária é: {raw_password}\n"
+            "Altere-a no seu primeiro acesso."
+        ),
+    )
+
+    return created_user
 
 
 @router.get(

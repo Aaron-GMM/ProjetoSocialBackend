@@ -4,12 +4,18 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session
 
-from src.application.schemas.auth_schema import TokenResponse
-from src.core.security import create_access_token, verify_password
+from src.application.schemas.auth_schema import (
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    TokenResponse,
+)
+from src.core.config import settings
+from src.core.security import create_access_token, create_reset_token, verify_password
 from src.infrastructure.database.connection import get_session
 from src.infrastructure.database.functions.user import (
     get_user_by_email_case_insensitive,
 )
+from src.infrastructure.services.email import send_email
 
 router = APIRouter(prefix="/auth", tags=["Autenticação"])
 
@@ -56,3 +62,46 @@ async def login(
     access_token = create_access_token(data=token_payload)
 
     return TokenResponse(access_token=access_token, token_type="bearer")
+
+
+@router.post(
+    "/forgot-password",
+    response_model=ForgotPasswordResponse,
+    summary="Solicita redefinição de senha",
+    description=(
+        "Inicia o fluxo de recuperação de senha.\n\n"
+        "**Regras de Negócio:**\n"
+        "- Se o e-mail estiver cadastrado, o backend gera um token JWT de vida "
+        "curta (claim `reset_token`) e envia o link de redefinição por e-mail "
+        "(envio simulado no console).\n"
+        "- A resposta é sempre `200 OK` com uma mensagem genérica, mesmo para "
+        "e-mails inexistentes, prevenindo a enumeração de usuários."
+    ),
+    response_description="Mensagem genérica de confirmação.",
+)
+async def forgot_password(
+    request: ForgotPasswordRequest,
+    db: Session = Depends(get_session),
+) -> ForgotPasswordResponse:
+    user = await get_user_by_email_case_insensitive(db=db, email=request.email)
+    if user:
+        reset_token = create_reset_token(user_id=user.id)
+        reset_link = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
+        send_email(
+            recipient=user.email,
+            subject="Redefinição de senha - Caça Placa",
+            body=(
+                f"Olá, {user.nome}!\n\n"
+                "Recebemos uma solicitação de redefinição de senha.\n"
+                f"Use o link abaixo para definir uma nova senha "
+                f"(válido por {settings.RESET_TOKEN_EXPIRE_MINUTES} minutos):\n"
+                f"{reset_link}"
+            ),
+        )
+
+    return ForgotPasswordResponse(
+        message=(
+            "Se o e-mail estiver cadastrado, você receberá em instantes um link "
+            "para redefinir sua senha."
+        )
+    )

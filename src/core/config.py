@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
+    RESET_TOKEN_EXPIRE_MINUTES: int = 15
+
+    # Frontend (usado para montar links enviados por e-mail)
+    FRONTEND_URL: str
 
     class Config:
         env_file = ".env"
