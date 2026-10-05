@@ -1,67 +1,74 @@
-from sqlmodel import Session, func, select
+from sqlmodel import func, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.domain.models.user import User
 
 
-def get_user_by_email_case_insensitive(db: Session, email: str) -> User | None:
+async def get_user_by_email_case_insensitive(
+    db: AsyncSession, email: str
+) -> User | None:
     """Busca um usuário no banco pelo email."""
     statement = select(User).where(func.lower(User.email) == func.lower(email))
+    result = await db.exec(statement)
+    return result.first()
 
-    return db.exec(statement).first()
 
-
-def get_user_by_id(db: Session, user_id: int) -> User | None:
+async def get_user_by_id(db: AsyncSession, user_id: int) -> User | None:
     """Busca um usuário pelo ID."""
     statement = select(User).where(User.id == user_id)
+    result = await db.exec(statement)
+    return result.first()
 
-    return db.exec(statement).first()
 
-
-def create_user(db: Session, user: User) -> User:
+async def create_user(db: AsyncSession, user: User) -> User:
     """Insere um novo usuário no banco."""
     db.add(user)
-    db.commit()
-    db.refresh(user)
+    await db.commit()
+    await db.refresh(user)
 
     return user
 
 
-def get_all_users(db: Session) -> list[User]:
+async def get_all_users(db: AsyncSession) -> list[User]:
     """Retorna todos os usuários."""
     statement = select(User)
+    result = await db.exec(statement)
+    return result.all()
 
-    return db.exec(statement).all()
 
-
-def get_all_users_paginated(db: Session, skip: int = 0, limit: int = 100) -> list[User]:
+async def get_all_users_paginated(
+    db: AsyncSession, skip: int = 0, limit: int = 100
+) -> list[User]:
     """Retorna todos os usuários com paginação."""
     statement = select(User).offset(skip).limit(limit)
+    result = await db.exec(statement)
+    return result.all()
 
-    return db.exec(statement).all()
 
-
-def update_user(db: Session, user_id: int, user_data: User) -> User | None:
+async def update_user(db: AsyncSession, user_id: int, user_data: User) -> User | None:
     """Atualiza um usuário no banco."""
     statement = select(User).where(User.id == user_id)
-    user = db.exec(statement).first()
+    result = await db.exec(statement)
+    user = result.first()
 
     if user:
         for key, value in user_data.model_dump().items():
             setattr(user, key, value)
-        db.commit()
-        db.refresh(user)
+        await db.commit()
+        await db.refresh(user)
 
     return user
 
 
-def delete_user(db: Session, user_id: int) -> bool:
+async def delete_user(db: AsyncSession, user_id: int) -> bool:
     """Deleta um usuário do banco."""
     statement = select(User).where(User.id == user_id)
-    user = db.exec(statement).first()
+    result = await db.exec(statement)
+    user = result.first()
 
     if user:
-        db.delete(user)
-        db.commit()
+        await db.delete(user)
+        await db.commit()
         return True
 
     return False
