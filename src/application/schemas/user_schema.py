@@ -24,3 +24,10 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     role: Optional[Role] = None
     is_active: Optional[bool] = None
+
+
+class UserUpdateMe(BaseModel):
+    """Schema de atualização do próprio usuário (PATCH /users/me)."""
+
+    nome: Optional[str] = None
+    email: Optional[EmailStr] = None

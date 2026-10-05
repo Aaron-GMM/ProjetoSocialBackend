@@ -94,3 +94,23 @@ async def test_update_user_not_found(client: AsyncClient, admin_token: str):
     update_data = {"is_active": False}
     response = await client.patch("/users/9999", json=update_data, headers=headers)
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_users_me(client: AsyncClient, agent_token: str, agent_user):
+    headers = {"Authorization": f"Bearer {agent_token}"}
+    response = await client.get("/users/me", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["nome"] == agent_user.nome
+    assert data["email"] == agent_user.email
+
+
+@pytest.mark.asyncio
+async def test_update_users_me(client: AsyncClient, agent_token: str, agent_user):
+    headers = {"Authorization": f"Bearer {agent_token}"}
+    update_data = {"nome": "Novo Nome"}
+    response = await client.patch("/users/me", json=update_data, headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["nome"] == "Novo Nome"
