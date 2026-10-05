@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
-# from src.infrastructure.database.connection import get_session
+from src.infrastructure.database.connection import get_session
 
 router = APIRouter(prefix="/users", tags=["Usuários"])
 
 
 @router.get("/")
-def list_users(db: Session = Depends()):  # TODO Equipe: Importar get_session
+def list_users(db: Session = Depends(get_session)):  # TODO Equipe: Importar get_session
     """
     Retorna a lista de usuários. (Apenas ADMs)
     """
@@ -15,7 +15,7 @@ def list_users(db: Session = Depends()):  # TODO Equipe: Importar get_session
 
 
 @router.patch("/{user_id}")
-def update_user(user_id: str, db: Session = Depends()):
+def update_user(user_id: str, db: Session = Depends(get_session)):
     """
     Atualiza dados do usuário. (Apenas ADMs)
     """

@@ -4,8 +4,10 @@ services:
     build: .
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/cacaplaca
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/cacaplaca
     volumes:
       - ./src:/app/src
     depends_on:
@@ -20,7 +22,7 @@ services:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=cacaplaca
     ports:
-      - "5432:5432"
+      - "${POSTGRES_LOCAL_PORT:-5432}:5432"
     volumes:
       - postgis_data:/var/lib/postgresql/data
     healthcheck:

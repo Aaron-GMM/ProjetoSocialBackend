@@ -72,6 +72,9 @@ jobs:
       - name: Executar Pytest (Gera coverage.xml)
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/cacaplaca_test
+          SECRET_KEY: test-secret-key-for-ci-only
+          ALGORITHM: HS256
+          ACCESS_TOKEN_EXPIRE_MINUTES: 60
         run: pytest
 
       - name: Diff-Cover (Quebra se < 85% nas linhas novas do PR)
