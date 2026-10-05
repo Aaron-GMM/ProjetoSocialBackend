@@ -6,7 +6,10 @@ class TokenResponse(BaseModel):
 
     access_token: str = Field(
         ...,
-        description="Token JWT (JSON Web Token) a ser enviado no Header 'Authorization: Bearer <token>'",  # noqa: E501
+        description=(
+            "Token JWT (JSON Web Token) a ser enviado no Header "
+            "'Authorization: Bearer <token>'"
+        ),
         examples=["eyJhbGciOiJIUzI1NiIsInR..."],
     )
     token_type: str = Field(

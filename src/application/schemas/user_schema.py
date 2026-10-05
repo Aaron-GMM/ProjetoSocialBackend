@@ -37,7 +37,7 @@ class UserUpdate(BaseModel):
     )
     is_active: Optional[bool] = Field(
         None,
-        description="Se False, desativa (bane) a conta do usuário",
+        description="Se False, desativa a conta do usuário",
         examples=[False],
     )
 

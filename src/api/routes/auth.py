@@ -21,9 +21,11 @@ router = APIRouter(prefix="/auth", tags=["Autenticação"])
     description=(
         "Endpoint padrão do OAuth2 para autenticação de usuários.\n\n"
         "**Regras de Negócio:**\n"
-        "- O frontend deve enviar `username` (email) e `password` no formato `application/x-www-form-urlencoded`.\n"  # noqa: E501
+        "- O frontend deve enviar `username` (email) e `password` no formato "
+        "`application/x-www-form-urlencoded`.\n"
         "- Se as credenciais forem válidas, a API emite um `access_token` JWT.\n"
-        "- O token contém a `role` e o `sub` (ID do usuário) e deve ser usado nas requisições subsequentes via cabeçalho `Authorization: Bearer <token>`."  # noqa: E501
+        "- O token contém a `role` e o `sub` (ID do usuário) e deve ser usado nas "
+        "requisições subsequentes via cabeçalho `Authorization: Bearer <token>`."
     ),
     response_description="Objeto contendo o Token JWT de Acesso e seu tipo.",
 )
