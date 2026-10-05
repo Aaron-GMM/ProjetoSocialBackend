@@ -1,16 +1,12 @@
-import os
-
 import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-# Pega a URL do ambiente (geralmente injetada pelo CI/Docker)
-# Se não houver, tenta conectar num Postgres local
-TEST_DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/cacaplaca"
-)
+from src.core.config import settings
+
+TEST_DATABASE_URL = settings.DATABASE_URL
 
 # Garante que use o asyncpg
 if TEST_DATABASE_URL.startswith("postgresql://"):
