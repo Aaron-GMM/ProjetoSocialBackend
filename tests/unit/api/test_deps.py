@@ -5,7 +5,12 @@ from fastapi.testclient import TestClient
 from jose import jwt
 
 from src.api.deps import get_current_user, require_admin
-from src.core.security import ALGORITHM, SECRET_KEY, create_access_token
+from src.core.security import (
+    ALGORITHM,
+    SECRET_KEY,
+    create_access_token,
+    create_reset_token,
+)
 from src.domain.enums.role import Role
 from src.domain.models.user import User
 from src.infrastructure.database.connection import get_session
@@ -80,6 +85,23 @@ def test_get_current_user_sucesso():
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["user_id"] == 1
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_current_user_rejeita_token_de_reset_password():
+    token = create_reset_token(user_id=1)
+    mock_db = AsyncMock()
+    mock_db.get.return_value = MagicMock(spec=User)
+    app.dependency_overrides[get_session] = lambda: mock_db
+
+    try:
+        response = client.get(
+            "/test/protected",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        mock_db.get.assert_not_awaited()
     finally:
         app.dependency_overrides.clear()
 

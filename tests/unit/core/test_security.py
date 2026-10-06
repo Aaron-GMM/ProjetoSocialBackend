@@ -10,6 +10,8 @@ from src.core.security import (
     create_reset_token,
     generate_random_password,
     get_password_hash,
+    validate_access_token,
+    validate_reset_token,
     verify_password,
 )
 
@@ -30,6 +32,7 @@ def test_create_access_token_default_expiry():
     payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     assert payload["sub"] == "1"
     assert payload["role"] == "admin"
+    assert payload["token_type"] == "access"
     assert "exp" in payload
 
 
@@ -41,6 +44,7 @@ def test_create_access_token_custom_expiry():
     payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     assert payload["sub"] == "2"
     assert payload["role"] == "user"
+    assert payload["token_type"] == "access"
     assert "exp" in payload
 
 
@@ -63,12 +67,22 @@ def test_generate_random_password_custom_length():
     assert len(generate_random_password(length=20)) == 20
 
 
-def test_create_reset_token_contains_reset_claim():
+def test_create_reset_token_contains_password_reset_type():
     token = create_reset_token(user_id=42)
 
     payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     assert payload["sub"] == "42"
-    assert payload["reset_token"] is True
+    assert payload["token_type"] == "password_reset"
+
+
+def test_access_token_nao_e_aceito_como_reset_token_e_vice_versa():
+    access_token = create_access_token(data={"sub": "1"})
+    reset_token = create_reset_token(user_id=1)
+
+    assert validate_access_token(access_token) == 1
+    assert validate_access_token(reset_token) is None
+    assert validate_reset_token(access_token) is None
+    assert validate_reset_token(reset_token) == 1
 
 
 def test_create_reset_token_expires_in_15_minutes():

@@ -34,7 +34,8 @@ router = APIRouter(prefix="/auth", tags=["Autenticação"])
         "- O frontend deve enviar `username` (email) e `password` no formato "
         "`application/x-www-form-urlencoded`.\n"
         "- Se as credenciais forem válidas, a API emite um `access_token` JWT.\n"
-        "- O token contém a `role` e o `sub` (ID do usuário) e deve ser usado nas "
+        "- O token contém `token_type=access`, a `role` e o `sub` (ID do usuário) "
+        "e deve ser usado nas "
         "requisições subsequentes via cabeçalho `Authorization: Bearer <token>`."
     ),
     response_description="Objeto contendo o Token JWT de Acesso e seu tipo.",
@@ -76,7 +77,8 @@ async def login(
         "Inicia o fluxo de recuperação de senha.\n\n"
         "**Regras de Negócio:**\n"
         "- Se o e-mail estiver cadastrado, o backend gera um token JWT de vida "
-        "curta (claim `reset_token`) e envia o link de redefinição por e-mail "
+        "curta (claim `token_type=password_reset`) e envia o link de redefinição "
+        "por e-mail "
         "(envio simulado no console).\n"
         "- A resposta é sempre `200 OK` com uma mensagem genérica, mesmo para "
         "e-mails inexistentes, prevenindo a enumeração de usuários."
