@@ -57,7 +57,7 @@ async def login(
 
     token_payload = {
         "sub": str(user.id),
-        "role": str(user.role),
+        "role": user.role.value,
     }
     access_token = create_access_token(data=token_payload)
 

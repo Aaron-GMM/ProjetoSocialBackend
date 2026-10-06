@@ -36,6 +36,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(op.f("ix_user_email"), table_name="user")
-    op.drop_table("user")
+    op.drop_index(op.f("ix_user_email"), table_name="users")
+    op.drop_table("users")
     # ### end Alembic commands ###
