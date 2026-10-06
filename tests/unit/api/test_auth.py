@@ -5,8 +5,15 @@ from fastapi.testclient import TestClient
 from jose import jwt
 
 from src.api.routes.auth import router
-from src.core.security import ALGORITHM, SECRET_KEY, get_password_hash
+from src.core.security import (
+    ALGORITHM,
+    SECRET_KEY,
+    create_reset_token,
+    get_password_hash,
+)
 from src.domain.enums.role import Role
+from src.domain.models.user import User
+from src.infrastructure.database.connection import get_session
 
 app = FastAPI()
 app.include_router(router)
@@ -185,3 +192,46 @@ def test_forgot_password_email_invalido_retorna_422():
     response = client.post("/auth/forgot-password", json={"email": "email-invalido"})
 
     assert response.status_code == 422
+
+
+def test_reset_password_com_token_valido_atualiza_senha():
+    fake_user = MagicMock(spec=User)
+    fake_user.id = 7
+    fake_user.password_hash = get_password_hash("senha_antiga")
+
+    mock_db = MagicMock()
+    mock_db.get = AsyncMock(return_value=fake_user)
+    app.dependency_overrides[get_session] = lambda: mock_db
+
+    try:
+        with patch(
+            "src.api.routes.auth.change_user_password",
+            new_callable=AsyncMock,
+        ) as mock_change_password:
+            response = client.post(
+                "/auth/reset-password",
+                params={"token": create_reset_token(fake_user.id)},
+                json={"new_password": "senha_nova"},
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "Senha redefinida com sucesso."}
+        mock_db.get.assert_awaited_once_with(User, fake_user.id)
+        mock_change_password.assert_awaited_once_with(
+            new_password="senha_nova",
+            user=fake_user,
+            db=mock_db,
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_reset_password_com_token_invalido_retorna_401():
+    response = client.post(
+        "/auth/reset-password",
+        params={"token": "token-invalido"},
+        json={"new_password": "senha_nova"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Token de redefinição inválido ou expirado."

@@ -31,3 +31,13 @@ class ForgotPasswordResponse(BaseModel):
     """Schema de resposta genérica do forgot-password (prevenção a user enumeration)."""
 
     message: str = Field(..., description="Mensagem de confirmação genérica")
+
+
+class ResetPasswordRequest(BaseModel):
+    """Dados necessários para definir uma nova senha."""
+
+    new_password: str = Field(
+        ...,
+        min_length=1,
+        description="Nova senha do usuário",
+    )

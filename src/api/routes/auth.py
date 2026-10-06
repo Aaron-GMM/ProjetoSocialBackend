@@ -2,17 +2,21 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlmodel import Session
+from sqlmodel.ext.asyncio.session import AsyncSession
 
+from src.api.deps import get_current_user_from_reset_token
 from src.application.schemas.auth_schema import (
     ForgotPasswordRequest,
     ForgotPasswordResponse,
+    ResetPasswordRequest,
     TokenResponse,
 )
 from src.core.config import settings
 from src.core.security import create_access_token, create_reset_token, verify_password
+from src.domain.models.user import User
 from src.infrastructure.database.connection import get_session
 from src.infrastructure.database.functions.user import (
+    change_user_password,
     get_user_by_email_case_insensitive,
 )
 from src.infrastructure.services.email import send_email
@@ -37,7 +41,7 @@ router = APIRouter(prefix="/auth", tags=["Autenticação"])
 )
 async def login(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
-    db: Session = Depends(get_session),
+    db: Annotated[AsyncSession, Depends(get_session)],
 ) -> TokenResponse:
     unauthorized_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -81,7 +85,7 @@ async def login(
 )
 async def forgot_password(
     request: ForgotPasswordRequest,
-    db: Session = Depends(get_session),
+    db: Annotated[AsyncSession, Depends(get_session)],
 ) -> ForgotPasswordResponse:
     user = await get_user_by_email_case_insensitive(db=db, email=request.email)
     if user:
@@ -105,3 +109,20 @@ async def forgot_password(
             "para redefinir sua senha."
         )
     )
+
+
+@router.post(
+    "/reset-password",
+    summary="Redefine a senha do usuário com um token válido",
+)
+async def reset_password(
+    request: ResetPasswordRequest,
+    current_user: Annotated[User, Depends(get_current_user_from_reset_token)],
+    db: Annotated[AsyncSession, Depends(get_session)],
+):
+    await change_user_password(
+        new_password=request.new_password,
+        user=current_user,
+        db=db,
+    )
+    return {"message": "Senha redefinida com sucesso."}

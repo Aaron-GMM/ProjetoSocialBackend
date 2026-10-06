@@ -3,7 +3,7 @@ import string
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
-from jose import jwt
+from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from src.core.config import settings
@@ -60,3 +60,23 @@ def create_reset_token(user_id: int) -> str:
     data = {"sub": str(user_id), "reset_token": True}
     expires_delta = timedelta(minutes=RESET_TOKEN_EXPIRE_MINUTES)
     return create_access_token(data=data, expires_delta=expires_delta)
+
+
+def validate_reset_token(token: str) -> Optional[int]:
+    """Valida um token de redefinição e retorna o ID do usuário.
+
+    Retorna ``None`` para tokens inválidos, expirados ou que não foram
+    emitidos especificamente para redefinição de senha.
+    """
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("reset_token") is not True:
+            return None
+
+        user_id = payload.get("sub")
+        if user_id is None:
+            return None
+
+        return int(user_id)
+    except (JWTError, TypeError, ValueError):
+        return None
