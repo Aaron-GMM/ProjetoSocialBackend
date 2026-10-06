@@ -25,6 +25,17 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class UserCreate(BaseModel):
+    """Schema de criação de usuário pelo admin (a senha é gerada pelo backend)."""
+
+    nome: str = Field(
+        ..., min_length=1, description="Nome completo", examples=["João da Silva"]
+    )
+    email: EmailStr = Field(
+        ..., description="E-mail do novo usuário", examples=["joao@exemplo.com"]
+    )
+
+
 class UserUpdate(BaseModel):
     """Schema de atualização de usuário (PATCH)."""
 

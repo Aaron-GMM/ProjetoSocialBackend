@@ -1,11 +1,17 @@
+import re
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+from src.core.security import verify_password
 from src.domain.enums.role import Role
 from src.domain.models.user import User
 from src.infrastructure.database.connection import get_session
-from src.infrastructure.database.functions.user import create_user
+from src.infrastructure.database.functions.user import (
+    create_user,
+    get_user_by_email_case_insensitive,
+)
 from src.main import app
 
 
@@ -114,3 +120,80 @@ async def test_update_users_me(client: AsyncClient, agent_token: str, agent_user
     assert response.status_code == 200
     data = response.json()
     assert data["nome"] == "Novo Nome"
+
+
+@pytest.mark.asyncio
+async def test_create_user_as_admin_gera_senha_e_envia_email(
+    client: AsyncClient, admin_token: str, db_session, capsys
+):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    response = await client.post(
+        "/users/",
+        json={"nome": "Novo Agente", "email": "novo.agente@test.com"},
+        headers=headers,
+    )
+    assert response.status_code == 201, response.json()
+
+    data = response.json()
+    assert data["nome"] == "Novo Agente"
+    assert data["email"] == "novo.agente@test.com"
+    assert data["role"] == "AGENTE"
+    assert data["is_active"] is True
+    assert "password_hash" not in data
+
+    # A senha gerada só aparece no e-mail simulado, nunca na resposta HTTP
+    output = capsys.readouterr().out
+    match = re.search(r"Sua senha temporária é: (\S+)", output)
+    assert match, output
+    raw_password = match.group(1)
+    assert raw_password not in response.text
+
+    user = await get_user_by_email_case_insensitive(db_session, "novo.agente@test.com")
+    assert user is not None
+    assert verify_password(raw_password, user.password_hash)
+
+
+@pytest.mark.asyncio
+async def test_create_user_email_duplicado_retorna_409(
+    client: AsyncClient, admin_token: str, agent_user
+):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    response = await client.post(
+        "/users/",
+        json={"nome": "Duplicado", "email": "agente@test.com"},
+        headers=headers,
+    )
+    assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_create_user_as_agent_forbidden(client: AsyncClient, agent_token: str):
+    headers = {"Authorization": f"Bearer {agent_token}"}
+    response = await client.post(
+        "/users/",
+        json={"nome": "Sem Permissao", "email": "sem.permissao@test.com"},
+        headers=headers,
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_create_user_sem_token_retorna_401(client: AsyncClient):
+    response = await client.post(
+        "/users/",
+        json={"nome": "Anonimo", "email": "anonimo@test.com"},
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_create_user_email_invalido_retorna_422(
+    client: AsyncClient, admin_token: str
+):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    response = await client.post(
+        "/users/",
+        json={"nome": "Invalido", "email": "email-invalido"},
+        headers=headers,
+    )
+    assert response.status_code == 422

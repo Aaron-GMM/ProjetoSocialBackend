@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 
 class TokenResponse(BaseModel):
@@ -15,3 +15,19 @@ class TokenResponse(BaseModel):
     token_type: str = Field(
         "bearer", description="Tipo do token (geralmente bearer)", examples=["bearer"]
     )
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Schema de requisição para solicitar redefinição de senha."""
+
+    email: EmailStr = Field(
+        ...,
+        description="E-mail da conta a ser recuperada",
+        examples=["joao@exemplo.com"],
+    )
+
+
+class ForgotPasswordResponse(BaseModel):
+    """Schema de resposta genérica do forgot-password (prevenção a user enumeration)."""
+
+    message: str = Field(..., description="Mensagem de confirmação genérica")
