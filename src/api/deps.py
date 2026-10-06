@@ -33,9 +33,7 @@ async def get_current_user(
 
 
 async def get_current_user_from_reset_token(
-    token: Annotated[
-        str, Query(description="Token de redefinição de senha")
-    ],
+    token: Annotated[str, Query(description="Token de redefinição de senha")],
     db: Annotated[AsyncSession, Depends(get_session)],
 ) -> User:
     """Obtém o usuário associado a um token válido de redefinição de senha."""

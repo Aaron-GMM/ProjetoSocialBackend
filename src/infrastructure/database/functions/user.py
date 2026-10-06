@@ -91,6 +91,7 @@ async def delete_user(db: AsyncSession, user_id: int) -> bool:
 
     return False
 
+
 async def change_user_password(new_password: str, user: User, db: AsyncSession):
     """Atualiza a senha do usuário armazenando apenas o hash."""
     hashed_password = get_password_hash(new_password)
