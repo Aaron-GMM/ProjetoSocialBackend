@@ -1,11 +1,10 @@
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from src.core.security import ALGORITHM, SECRET_KEY
+from src.core.security import validate_access_token, validate_reset_token
 from src.domain.enums.role import Role
 from src.domain.models.user import User
 from src.infrastructure.database.connection import get_session
@@ -22,13 +21,30 @@ async def get_current_user(
         detail="Credenciais inválidas ou token expirado.",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id_str: str | None = payload.get("sub")
-        if user_id_str is None:
-            raise credentials_exception
-        user_id = int(user_id_str)
-    except (JWTError, ValueError):
+    user_id = validate_access_token(token)
+    if user_id is None:
+        raise credentials_exception
+
+    user = await db.get(User, user_id)
+    if user is None:
+        raise credentials_exception
+
+    return user
+
+
+async def get_current_user_from_reset_token(
+    token: Annotated[str, Query(description="Token de redefinição de senha")],
+    db: Annotated[AsyncSession, Depends(get_session)],
+) -> User:
+    """Obtém o usuário associado a um token válido de redefinição de senha."""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Token de redefinição inválido ou expirado.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    user_id = validate_reset_token(token)
+    if user_id is None:
         raise credentials_exception
 
     user = await db.get(User, user_id)

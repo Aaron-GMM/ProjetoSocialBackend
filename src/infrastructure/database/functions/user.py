@@ -1,6 +1,7 @@
 from sqlmodel import func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from src.core.security import get_password_hash
 from src.domain.models.user import User
 
 
@@ -89,3 +90,12 @@ async def delete_user(db: AsyncSession, user_id: int) -> bool:
         return True
 
     return False
+
+
+async def change_user_password(new_password: str, user: User, db: AsyncSession):
+    """Atualiza a senha do usuário armazenando apenas o hash."""
+    hashed_password = get_password_hash(new_password)
+    user.password_hash = hashed_password
+
+    db.add(user)
+    await db.commit()

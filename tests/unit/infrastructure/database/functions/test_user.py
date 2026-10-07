@@ -1,8 +1,12 @@
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
+from src.core.security import get_password_hash, verify_password
 from src.domain.enums.role import Role
 from src.domain.models.user import User
 from src.infrastructure.database.functions.user import (
+    change_user_password,
     create_user,
     delete_user,
     get_all_users,
@@ -178,3 +182,23 @@ async def test_update_user_partial(db_session):
     assert user.is_active is False
     assert user.email == "john.doe@example.com"
     assert user.id is not None
+
+
+@pytest.mark.asyncio
+async def test_change_user_password_atualiza_hash_e_salva_usuario():
+    user = User(
+        id=1,
+        nome="John Doe",
+        email="john.doe@example.com",
+        password_hash=get_password_hash("senha_antiga"),
+    )
+    db = MagicMock()
+    db.commit = AsyncMock()
+
+    await change_user_password("senha_nova", user, db)
+
+    assert user.password_hash != "senha_nova"
+    assert verify_password("senha_nova", user.password_hash)
+    assert not verify_password("senha_antiga", user.password_hash)
+    db.add.assert_called_once_with(user)
+    db.commit.assert_awaited_once()
