@@ -40,7 +40,7 @@ A estrutura atual (`src/`) está organizada em:
 
 ## Variáveis de Ambiente (.env)
 Antes de rodar o projeto, crie um arquivo `.env` na raiz do projeto.
-Abaixo um exemplo de como o arquivo deve ser estruturado (copie este conteúdo e ajuste conforme necessário, mas não utilize dados reais de produção em ambiente de desenvolvimento):
+Abaixo um exemplo de como o arquivo deve ser estruturado (copie este conteúdo e ajuste conforme necessário):
 
 ```env
 # Configurações do Banco de Dados
