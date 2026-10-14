@@ -78,7 +78,7 @@ async def update_users_me(
         "- Requer nível de acesso `ADMINISTRADOR`.\n"
         "- A senha **não** vem no request: o backend gera uma senha forte "
         "aleatória, persiste apenas o seu hash e a envia por e-mail ao novo "
-        "usuário (envio simulado no console).\n"
+        "usuário via SMTP.\n"
         "- A resposta **nunca** retorna a senha em texto plano."
     ),
     response_description="Dados do usuário criado (sem senha).",
@@ -105,7 +105,7 @@ async def create_user(
     )
     created_user = await user_functions.create_user(db, new_user)
 
-    send_email(
+    await send_email(
         recipient=created_user.email,
         subject="Sua conta no Caça Placa foi criada",
         body=(

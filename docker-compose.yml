@@ -11,6 +11,10 @@ services:
       - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
       - RESET_TOKEN_EXPIRE_MINUTES=${RESET_TOKEN_EXPIRE_MINUTES}
       - FRONTEND_URL=${FRONTEND_URL}
+      - MAIL_SERVER=${MAIL_SERVER:-smtp.gmail.com}
+      - MAIL_PORT=${MAIL_PORT:-587}
+      - EMAIL=${EMAIL:-}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD:-}
     volumes:
       - ./src:/app/src
     depends_on:

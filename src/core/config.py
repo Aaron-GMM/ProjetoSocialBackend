@@ -15,6 +15,12 @@ class Settings(BaseSettings):
     # Frontend (usado para montar links enviados por e-mail e regras de CORS)
     FRONTEND_URL: str
 
+    # SMTP (Gmail)
+    MAIL_SERVER: str = "smtp.gmail.com"
+    MAIL_PORT: int = 587
+    EMAIL: str = ""
+    EMAIL_PASSWORD: str = ""
+
     class Config:
         env_file = ".env"
         extra = "ignore"

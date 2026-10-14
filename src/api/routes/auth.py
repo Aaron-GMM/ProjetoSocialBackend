@@ -78,10 +78,10 @@ async def login(
         "**Regras de Negócio:**\n"
         "- Se o e-mail estiver cadastrado, o backend gera um token JWT de vida "
         "curta (claim `token_type=password_reset`) e envia o link de redefinição "
-        "por e-mail "
-        "(envio simulado no console).\n"
-        "- A resposta é sempre `200 OK` com uma mensagem genérica, mesmo para "
-        "e-mails inexistentes, prevenindo a enumeração de usuários."
+        "por e-mail via SMTP.\n"
+        "- A resposta de sucesso contém uma mensagem genérica, mesmo para "
+        "e-mails inexistentes, prevenindo a enumeração de usuários.\n"
+        "- Falhas na configuração ou no envio SMTP são propagadas como erro."
     ),
     response_description="Mensagem genérica de confirmação.",
 )
@@ -93,7 +93,7 @@ async def forgot_password(
     if user:
         reset_token = create_reset_token(user_id=user.id)
         reset_link = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
-        send_email(
+        await send_email(
             recipient=user.email,
             subject="Redefinição de senha - Caça Placa",
             body=(
@@ -104,12 +104,11 @@ async def forgot_password(
                 f"{reset_link}"
             ),
         )
+    else:
+        raise HTTPException(404, "Usuário não encontrado.")
 
     return ForgotPasswordResponse(
-        message=(
-            "Se o e-mail estiver cadastrado, você receberá em instantes um link "
-            "para redefinir sua senha."
-        )
+        message=("E-mail de redefinição de senha enviado com sucesso!")
     )
 
 
