@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -87,26 +87,36 @@ async def login(
 )
 async def forgot_password(
     request: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
     db: Annotated[AsyncSession, Depends(get_session)],
 ) -> ForgotPasswordResponse:
-    user = await get_user_by_email_case_insensitive(db=db, email=request.email)
+    user = await get_user_by_email_case_insensitive(
+        db=db,
+        email=request.email,
+    )
+
     if user:
         reset_token = create_reset_token(user_id=user.id)
         reset_link = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
-        await send_email(
+
+        background_tasks.add_task(
+            send_email,
             recipient=user.email,
             subject="Redefinição de senha - Caça Placa",
             body=(
                 f"Olá, {user.nome}!\n\n"
                 "Recebemos uma solicitação de redefinição de senha.\n"
-                f"Use o link abaixo para definir uma nova senha "
+                "Use o link abaixo para definir uma nova senha "
                 f"(válido por {settings.RESET_TOKEN_EXPIRE_MINUTES} minutos):\n"
                 f"{reset_link}"
             ),
         )
 
     return ForgotPasswordResponse(
-        message=("E-mail de redefinição de senha enviado com sucesso!")
+        message=(
+            "Se o e-mail estiver cadastrado, você receberá em instantes "
+            "um link para redefinir sua senha."
+        )
     )
 
 
