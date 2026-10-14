@@ -104,8 +104,6 @@ async def forgot_password(
                 f"{reset_link}"
             ),
         )
-    else:
-        raise HTTPException(404, "Usuário não encontrado.")
 
     return ForgotPasswordResponse(
         message=("E-mail de redefinição de senha enviado com sucesso!")

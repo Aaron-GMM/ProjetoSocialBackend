@@ -103,8 +103,7 @@ def test_login_usuario_sem_hash_retorna_401():
 
 
 GENERIC_MESSAGE = (
-    "Se o e-mail estiver cadastrado, você receberá em instantes um link "
-    "para redefinir sua senha."
+    "E-mail de redefinição de senha enviado com sucesso!"
 )
 
 
