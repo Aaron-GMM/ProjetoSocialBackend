@@ -57,7 +57,18 @@ RESET_TOKEN_EXPIRE_MINUTES=15
 
 # Integração com Frontend (Base para envio de E-mails e CORS)
 FRONTEND_URL="http://localhost:5173"
+
+# SMTP Gmail (porta 587 com STARTTLS)
+MAIL_SERVER="smtp.gmail.com"
+MAIL_PORT=587
+EMAIL="seu-email@gmail.com"
+EMAIL_PASSWORD="sua-senha-de-app"
 ```
+
+`EMAIL_PASSWORD` deve ser uma senha de app do Google, não a senha normal da conta.
+O mesmo endereço definido em `EMAIL` é usado para autenticação e como remetente.
+Para usar outro provedor, altere `MAIL_SERVER` e `MAIL_PORT`; o envio está
+configurado com STARTTLS (porta 587).
 
 ## Como Iniciar o Desenvolvimento (Passo a Passo)
 

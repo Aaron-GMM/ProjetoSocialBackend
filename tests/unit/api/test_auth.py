@@ -121,7 +121,9 @@ def test_forgot_password_usuario_existente_envia_email_com_token():
             return_value=fake_user,
         ),
         patch("src.api.routes.auth.create_reset_token", return_value="token-falso"),
-        patch("src.api.routes.auth.send_email") as mock_send_email,
+        patch(
+            "src.api.routes.auth.send_email", new_callable=AsyncMock
+        ) as mock_send_email,
     ):
         response = client.post(
             "/auth/forgot-password", json={"email": "usuario@teste.com"}
@@ -130,8 +132,8 @@ def test_forgot_password_usuario_existente_envia_email_com_token():
     assert response.status_code == 200
     assert response.json() == {"message": GENERIC_MESSAGE}
 
-    mock_send_email.assert_called_once()
-    _, kwargs = mock_send_email.call_args
+    mock_send_email.assert_awaited_once()
+    kwargs = mock_send_email.await_args.kwargs
     assert kwargs["recipient"] == "usuario@teste.com"
     assert "token-falso" in kwargs["body"]
 
@@ -144,7 +146,9 @@ def test_forgot_password_usuario_inexistente_nao_envia_email():
             return_value=None,
         ),
         patch("src.api.routes.auth.create_reset_token") as mock_create_token,
-        patch("src.api.routes.auth.send_email") as mock_send_email,
+        patch(
+            "src.api.routes.auth.send_email", new_callable=AsyncMock
+        ) as mock_send_email,
     ):
         response = client.post(
             "/auth/forgot-password", json={"email": "fantasma@teste.com"}
@@ -153,7 +157,7 @@ def test_forgot_password_usuario_inexistente_nao_envia_email():
     assert response.status_code == 200
     assert response.json() == {"message": GENERIC_MESSAGE}
     mock_create_token.assert_not_called()
-    mock_send_email.assert_not_called()
+    mock_send_email.assert_not_awaited()
 
 
 def test_forgot_password_mensagem_generica_previnem_user_enumeration():
@@ -178,7 +182,7 @@ def test_forgot_password_mensagem_generica_previnem_user_enumeration():
             return_value=fake_user,
         ),
         patch("src.api.routes.auth.create_reset_token", return_value="token-falso"),
-        patch("src.api.routes.auth.send_email"),
+        patch("src.api.routes.auth.send_email", new_callable=AsyncMock),
     ):
         response_existente = client.post(
             "/auth/forgot-password", json={"email": "existe@teste.com"}

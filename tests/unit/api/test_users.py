@@ -1,4 +1,4 @@
-import re
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -124,14 +124,17 @@ async def test_update_users_me(client: AsyncClient, agent_token: str, agent_user
 
 @pytest.mark.asyncio
 async def test_create_user_as_admin_gera_senha_e_envia_email(
-    client: AsyncClient, admin_token: str, db_session, capsys
+    client: AsyncClient, admin_token: str, db_session
 ):
     headers = {"Authorization": f"Bearer {admin_token}"}
-    response = await client.post(
-        "/users/",
-        json={"nome": "Novo Agente", "email": "novo.agente@test.com"},
-        headers=headers,
-    )
+    with patch(
+        "src.api.routes.users.send_email", new_callable=AsyncMock
+    ) as mock_send_email:
+        response = await client.post(
+            "/users/",
+            json={"nome": "Novo Agente", "email": "novo.agente@test.com"},
+            headers=headers,
+        )
     assert response.status_code == 201, response.json()
 
     data = response.json()
@@ -141,11 +144,10 @@ async def test_create_user_as_admin_gera_senha_e_envia_email(
     assert data["is_active"] is True
     assert "password_hash" not in data
 
-    # A senha gerada só aparece no e-mail simulado, nunca na resposta HTTP
-    output = capsys.readouterr().out
-    match = re.search(r"Sua senha temporária é: (\S+)", output)
-    assert match, output
-    raw_password = match.group(1)
+    mock_send_email.assert_awaited_once()
+    email = mock_send_email.await_args.kwargs
+    assert email["recipient"] == "novo.agente@test.com"
+    raw_password = email["body"].split("Sua senha temporária é: ", 1)[1].splitlines()[0]
     assert raw_password not in response.text
 
     user = await get_user_by_email_case_insensitive(db_session, "novo.agente@test.com")
