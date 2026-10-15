@@ -15,11 +15,19 @@ services:
       - MAIL_PORT=${MAIL_PORT:-587}
       - EMAIL=${EMAIL:-}
       - EMAIL_PASSWORD=${EMAIL_PASSWORD:-}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
+      - MINIO_PUBLIC_URL=${MINIO_PUBLIC_URL:-http://localhost:9000}
+      - MINIO_APP_ACCESS_KEY=${MINIO_APP_ACCESS_KEY:-}
+      - MINIO_APP_SECRET_KEY=${MINIO_APP_SECRET_KEY:-}
+      - MINIO_BUCKET_NAME=${MINIO_BUCKET_NAME:-cacaplaca-images}
+      - MINIO_SECURE=${MINIO_SECURE:-false}
     volumes:
       - ./src:/app/src
     depends_on:
       db:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 
   db:
@@ -38,5 +46,44 @@ services:
       timeout: 5s
       retries: 5
 
+  minio:
+    image: minio/minio:RELEASE.2024-05-10T01-41-38Z
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:RELEASE.2024-05-09T17-04-24Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - MINIO_BUCKET_NAME=${MINIO_BUCKET_NAME:-cacaplaca-images}
+      - MINIO_APP_ACCESS_KEY=${MINIO_APP_ACCESS_KEY}
+      - MINIO_APP_SECRET_KEY=${MINIO_APP_SECRET_KEY}
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD;
+      mc mb --ignore-existing local/$$MINIO_BUCKET_NAME;
+      mc admin user add local $$MINIO_APP_ACCESS_KEY $$MINIO_APP_SECRET_KEY || true;
+      mc admin policy attach local readwrite --user $$MINIO_APP_ACCESS_KEY;
+      echo 'MinIO provisionado com sucesso com Service Account dedicada!';
+      exit 0;
+      "
+
 volumes:
   postgis_data:
+  minio_data:
