@@ -5,7 +5,16 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/cacaplaca
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/cacaplaca
+      - SECRET_KEY=${SECRET_KEY}
+      - ALGORITHM=${ALGORITHM}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
+      - RESET_TOKEN_EXPIRE_MINUTES=${RESET_TOKEN_EXPIRE_MINUTES}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - MAIL_SERVER=${MAIL_SERVER:-smtp.gmail.com}
+      - MAIL_PORT=${MAIL_PORT:-587}
+      - EMAIL=${EMAIL:-}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD:-}
     volumes:
       - ./src:/app/src
     depends_on:
@@ -16,9 +25,9 @@ services:
   db:
     image: postgis/postgis:15-3.3-alpine
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=cacaplaca
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:

@@ -1,0 +1,33 @@
+"""add is_active to user
+
+Revision ID: 47b575dcb3d1
+Revises: 545ae0ff7d04
+Create Date: 2026-10-05 10:39:16.455514
+
+"""
+
+from typing import Sequence, Union
+
+import sqlalchemy as sa
+
+from alembic import op
+
+# revision identifiers, used by Alembic.
+revision: str = "47b575dcb3d1"
+down_revision: Union[str, None] = "545ae0ff7d04"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    op.add_column(
+        "users",
+        sa.Column(
+            "is_active", sa.Boolean(), server_default=sa.text("true"), nullable=False
+        ),
+    )
+
+
+def downgrade() -> None:
+    op.drop_column("users", "is_active")
+    # ### end Alembic commands ###

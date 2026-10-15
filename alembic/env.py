@@ -1,5 +1,4 @@
 import asyncio
-import os
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -7,13 +6,12 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlmodel import SQLModel
 
 from alembic import context
+from src.core.config import settings
 
 config = context.config
 
 # Troca o protocolo para asyncpg
-raw_url = os.getenv(
-    "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/cacaplaca"
-)
+raw_url = settings.DATABASE_URL
 if raw_url.startswith("postgresql://"):
     raw_url = raw_url.replace("postgresql://", "postgresql+asyncpg://")
 

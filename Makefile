@@ -1,3 +1,5 @@
+DOCKER_COMPOSE := $(shell if docker compose version >/dev/null 2>&1; then echo "docker compose"; else echo "docker-compose"; fi)
+
 .PHONY: setup run test lint format migrate-generate migrate-apply
 
 setup:
@@ -5,7 +7,7 @@ setup:
 	uv venv --allow-existing && uv pip install -e ".[dev]"
 
 run:
-	docker-compose up --build
+	$(DOCKER_COMPOSE) up --build
 
 test:
 	uv run pytest
@@ -32,11 +34,11 @@ build:
 
 db-up:
 	@echo "Subindo os containers de banco de dados..."
-	docker-compose up -d db
+	$(DOCKER_COMPOSE) up -d db
 
 db-down:
 	@echo "Derrubando os containers e limpando volumes (CUIDADO: apaga dados locais)..."
-	docker-compose down -v
+	$(DOCKER_COMPOSE) down -v
 
 test-alembic: db-up
 	@echo "Aguardando o banco ficar pronto..."
