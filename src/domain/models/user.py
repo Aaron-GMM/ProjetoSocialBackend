@@ -40,5 +40,6 @@ class User(SQLModel, table=True):
     )
 
     eventos_criados: List["EventosPlaca"] = Relationship(
-        back_populates="created_by_user"
+        back_populates="created_by_user",
+        sa_relationship_kwargs={"lazy": "selectin"}
     )

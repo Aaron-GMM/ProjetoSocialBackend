@@ -4,6 +4,11 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+import src.domain.models.endereco
+import src.domain.models.eventos_placa
+import src.domain.models.municipio
+import src.domain.models.placa
+import src.domain.models.user
 from src.core.config import settings
 
 TEST_DATABASE_URL = settings.DATABASE_URL

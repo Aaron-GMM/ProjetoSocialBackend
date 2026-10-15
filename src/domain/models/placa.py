@@ -29,6 +29,8 @@ class Placa(SQLModel, table=True):
 
     __tablename__ = "placas"
 
+    model_config = {"arbitrary_types_allowed": True}
+
     id: UUID = Field(
         default_factory=uuid4,
         primary_key=True,
