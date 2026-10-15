@@ -1,6 +1,11 @@
-from sqlmodel import Field, SQLModel
+from typing import TYPE_CHECKING, List
+
+from sqlmodel import Field, Relationship, SQLModel
 
 from ..enums.role import Role
+
+if TYPE_CHECKING:
+    from src.domain.models.eventos_placa import EventosPlaca
 
 
 class User(SQLModel, table=True):
@@ -13,6 +18,8 @@ class User(SQLModel, table=True):
         email: Email do usuário
         password_hash: Hash da senha do usuário
         role: Função do usuário
+        is_active: Status de atividade do usuário
+        eventos_criados: Eventos criados pelo usuário
     """
 
     __tablename__ = "users"
@@ -30,4 +37,9 @@ class User(SQLModel, table=True):
     )
     is_active: bool = Field(
         default=True, nullable=False, description="Status de atividade do usuário"
+    )
+
+    eventos_criados: List["EventosPlaca"] = Relationship(
+        back_populates="created_by_user",
+        sa_relationship_kwargs={"lazy": "selectin"}
     )
