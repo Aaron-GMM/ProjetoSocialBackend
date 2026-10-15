@@ -21,6 +21,14 @@ class Settings(BaseSettings):
     EMAIL: str = ""
     EMAIL_PASSWORD: str = ""
 
+    # MinIO / Object Storage
+    MINIO_ENDPOINT: str = "localhost:9000"
+    MINIO_PUBLIC_URL: str = "http://localhost:9000"
+    MINIO_APP_ACCESS_KEY: str = ""
+    MINIO_APP_SECRET_KEY: str = ""
+    MINIO_BUCKET_NAME: str = "cacaplaca-images"
+    MINIO_SECURE: bool = False
+
     class Config:
         env_file = ".env"
         extra = "ignore"

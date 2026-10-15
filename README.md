@@ -63,6 +63,16 @@ MAIL_SERVER="smtp.gmail.com"
 MAIL_PORT=587
 EMAIL="seu-email@gmail.com"
 EMAIL_PASSWORD="sua-senha-de-app"
+
+# MinIO / Object Storage (IAM: credenciais separadas para Root e API)
+MINIO_ROOT_USER="admin_cacaplaca"
+MINIO_ROOT_PASSWORD="sua_senha_root_segura"
+MINIO_APP_ACCESS_KEY="caca_placa_api_user"
+MINIO_APP_SECRET_KEY="sua_chave_secreta_api"
+MINIO_BUCKET_NAME="cacaplaca-images"
+MINIO_ENDPOINT="localhost:9000"
+MINIO_PUBLIC_URL="http://localhost:9000"
+MINIO_SECURE=false
 ```
 
 `EMAIL_PASSWORD` deve ser uma senha de app do Google, não a senha normal da conta.
