@@ -41,7 +41,7 @@ def upgrade() -> None:
         sa.Column("location", Geometry("POINT", srid=4326), nullable=True),
         sa.Column(
             "created_at",
-            sa.DateTime(),
+            sa.DateTime(timezone=True),
             nullable=False,
             server_default=sa.text("now()"),
         ),
@@ -112,7 +112,7 @@ def upgrade() -> None:
         sa.Column("observacao", sa.String(), nullable=True),
         sa.Column(
             "timestamp",
-            sa.DateTime(),
+            sa.DateTime(timezone=True),
             nullable=False,
             server_default=sa.text("now()"),
         ),

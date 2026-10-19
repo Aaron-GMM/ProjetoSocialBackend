@@ -32,6 +32,7 @@ def test_instanciar_placa_com_campos_obrigatorios_e_opcionais_nulos():
     assert placa.tipo_substrato is None
     assert placa.tipo_suporte is None
     assert isinstance(placa.created_at, datetime)
+    assert placa.created_at.tzinfo is not None
 
 
 def test_instanciar_placa_completa_com_enums():
@@ -78,6 +79,7 @@ def test_instanciar_endereco_e_evento_placa():
     assert evento.estado_pelicula == EstadoConservacao.BOM
     assert evento.estado_substrato == EstadoConservacao.REGULAR
     assert evento.estado_suporte == EstadoConservacao.RUIM
+    assert evento.timestamp.tzinfo is not None
 
 
 @pytest.mark.asyncio

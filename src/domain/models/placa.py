@@ -1,9 +1,9 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
 from geoalchemy2 import Geometry
-from sqlalchemy import String
+from sqlalchemy import DateTime, String, func
 from sqlmodel import Column, Field, Relationship, SQLModel
 
 from src.domain.enums.placa_enums import (
@@ -71,8 +71,12 @@ class Placa(SQLModel, table=True):
         description="Localização geográfica da placa",
     )
     created_at: datetime = Field(
-        default_factory=datetime.now,
-        nullable=False,
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            server_default=func.now(),
+        ),
         description="Data e hora de criação da placa",
     )
 

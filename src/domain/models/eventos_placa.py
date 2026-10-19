@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from sqlmodel import Field, Relationship, SQLModel
+from sqlalchemy import DateTime, func
+from sqlmodel import Column, Field, Relationship, SQLModel
 
 from src.domain.enums.placa_enums import EstadoConservacao, TipoEvento
 
@@ -81,8 +82,12 @@ class EventosPlaca(SQLModel, table=True):
         description="Observação sobre o evento",
     )
     timestamp: datetime = Field(
-        default_factory=datetime.now,
-        nullable=False,
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            server_default=func.now(),
+        ),
         description="Data e hora do evento",
     )
 
