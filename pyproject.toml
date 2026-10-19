@@ -43,7 +43,7 @@ line-length = 88
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I"]
+select = ["E", "F", "I", "UP006", "UP007", "UP035", "UP045"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
