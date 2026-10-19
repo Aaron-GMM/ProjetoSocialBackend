@@ -1,4 +1,6 @@
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, Relationship, SQLModel
+
+from src.domain.models.eventos_placa import EventosPlaca
 
 from ..enums.role import Role
 
@@ -13,6 +15,8 @@ class User(SQLModel, table=True):
         email: Email do usuário
         password_hash: Hash da senha do usuário
         role: Função do usuário
+        is_active: Status de atividade do usuário
+        eventos_criados: Eventos criados pelo usuário
     """
 
     __tablename__ = "users"
@@ -30,4 +34,8 @@ class User(SQLModel, table=True):
     )
     is_active: bool = Field(
         default=True, nullable=False, description="Status de atividade do usuário"
+    )
+
+    eventos_criados: list[EventosPlaca] = Relationship(
+        back_populates="created_by_user"
     )

@@ -1,5 +1,3 @@
-from typing import Optional
-
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from src.domain.enums.role import Role
@@ -39,14 +37,14 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     """Schema de atualização de usuário (PATCH)."""
 
-    nome: Optional[str] = Field(None, description="Novo nome", examples=["João Silva"])
-    email: Optional[EmailStr] = Field(
+    nome: str | None = Field(None, description="Novo nome", examples=["João Silva"])
+    email: EmailStr | None = Field(
         None, description="Novo e-mail", examples=["novo.email@exemplo.com"]
     )
-    role: Optional[Role] = Field(
+    role: Role | None = Field(
         None, description="Novo nível de acesso", examples=["ADMINISTRADOR"]
     )
-    is_active: Optional[bool] = Field(
+    is_active: bool | None = Field(
         None,
         description="Se False, desativa a conta do usuário",
         examples=[False],
@@ -56,9 +54,9 @@ class UserUpdate(BaseModel):
 class UserUpdateMe(BaseModel):
     """Schema de atualização do próprio usuário (PATCH /users/me)."""
 
-    nome: Optional[str] = Field(
+    nome: str | None = Field(
         None, description="Seu novo nome", examples=["Aaron Gibran"]
     )
-    email: Optional[EmailStr] = Field(
+    email: EmailStr | None = Field(
         None, description="Seu novo e-mail", examples=["aaron@exemplo.com"]
     )

@@ -4,6 +4,11 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+import src.domain.models.endereco  # noqa: F401
+import src.domain.models.eventos_placa  # noqa: F401
+import src.domain.models.municipio  # noqa: F401
+import src.domain.models.placa  # noqa: F401
+import src.domain.models.user  # noqa: F401
 from src.core.config import settings
 
 TEST_DATABASE_URL = settings.DATABASE_URL
@@ -32,6 +37,7 @@ async def engine():
 
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.drop_all)
+        await conn.execute(text("DROP TABLE IF EXISTS alembic_version;"))
 
     await engine.dispose()
 
