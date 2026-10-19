@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
@@ -33,6 +35,7 @@ class Enderecos(SQLModel, table=True):
         foreign_key="placas.id",
         unique=True,
         nullable=False,
+        ondelete="CASCADE",
         description="Identificador da placa",
     )
     logradouro: str = Field(
@@ -47,9 +50,10 @@ class Enderecos(SQLModel, table=True):
         nullable=False,
         description="CEP do endereço",
     )
-    referencia: str = Field(
+    referencia: str | None = Field(
+        default=None,
         nullable=True,
         description="Complemento do endereço",
     )
 
-    placa: "Placa" = Relationship(back_populates="endereco")
+    placa: Placa = Relationship(back_populates="endereco")

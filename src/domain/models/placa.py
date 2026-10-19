@@ -1,13 +1,19 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, List
+from typing import Any
 from uuid import UUID, uuid4
 
 from geoalchemy2 import Geometry
+from sqlalchemy import String
 from sqlmodel import Column, Field, Relationship, SQLModel
 
-if TYPE_CHECKING:
-    from src.domain.models.endereco import Enderecos
-    from src.domain.models.eventos_placa import EventosPlaca
+from src.domain.enums.placa_enums import (
+    CodigoContran,
+    TipoPelicula,
+    TipoSubstrato,
+    TipoSuporte,
+)
+from src.domain.models.endereco import Enderecos
+from src.domain.models.eventos_placa import EventosPlaca
 
 
 class Placa(SQLModel, table=True):
@@ -16,15 +22,15 @@ class Placa(SQLModel, table=True):
 
     Atributos:
         id (UUID): Identificador único da placa.
-        codigo_contran (str): Código Contran.
-        afastamento (float, opcional): Valor do afastamento.
-        tipo_pelicula (str, opcional): Tipo de película.
-        tipo_substrato (str, opcional): Tipo de substrato.
-        tipo_suporte (str, opcional): Tipo de suporte.
-        location (Geometry): Localização geográfica da placa.
+        codigo_contran (CodigoContran): Código Contran da placa (ex: R-1).
+        afastamento (float, opcional): Distância do bordo em metros.
+        tipo_pelicula (TipoPelicula, opcional): Tipo de película.
+        tipo_substrato (TipoSubstrato, opcional): Tipo de substrato.
+        tipo_suporte (TipoSuporte, opcional): Tipo de suporte.
+        location (Any): Localização geográfica da placa (Point, SRID 4326).
         created_at (datetime): Data e hora de criação da placa.
-        endereco (Enderecos): Endereço da placa.
-        eventos (List[EventosPlaca]): Eventos da placa.
+        endereco (Enderecos, opcional): Endereço da placa (relação 1:1).
+        eventos (list[EventosPlaca]): Histórico de eventos da placa (relação 1:N).
     """
 
     __tablename__ = "placas"
@@ -36,12 +42,31 @@ class Placa(SQLModel, table=True):
         primary_key=True,
         description="Identificador único da placa",
     )
-    codigo_contran: str = Field(index=True, unique=True, description="Código Contran")
-    afastamento: float = Field(nullable=True, description="Valor do afastamento")
-    tipo_pelicula: str = Field(nullable=True, description="Tipo de película")
-    tipo_substrato: str = Field(nullable=True, description="Tipo de substrato")
-    tipo_suporte: str = Field(nullable=True, description="Tipo de suporte")
-    location: Geometry = Field(
+    codigo_contran: CodigoContran = Field(
+        sa_column=Column(String, index=True, nullable=False),
+        description="Código Contran (Ex: R-1, A-2a)",
+    )
+    afastamento: float | None = Field(
+        default=None,
+        nullable=True,
+        description="Valor do afastamento em metros",
+    )
+    tipo_pelicula: TipoPelicula | None = Field(
+        default=None,
+        sa_column=Column(String, nullable=True),
+        description="Tipo de película",
+    )
+    tipo_substrato: TipoSubstrato | None = Field(
+        default=None,
+        sa_column=Column(String, nullable=True),
+        description="Tipo de substrato",
+    )
+    tipo_suporte: TipoSuporte | None = Field(
+        default=None,
+        sa_column=Column(String, nullable=True),
+        description="Tipo de suporte",
+    )
+    location: Any = Field(
         sa_column=Column(Geometry("POINT", srid=4326)),
         description="Localização geográfica da placa",
     )
@@ -51,5 +76,14 @@ class Placa(SQLModel, table=True):
         description="Data e hora de criação da placa",
     )
 
-    endereco: "Enderecos" = Relationship(back_populates="placa")
-    eventos: List["EventosPlaca"] = Relationship(back_populates="placa")
+    endereco: Enderecos | None = Relationship(
+        back_populates="placa",
+        sa_relationship_kwargs={
+            "uselist": False,
+            "cascade": "all, delete-orphan",
+        },
+    )
+    eventos: list[EventosPlaca] = Relationship(
+        back_populates="placa",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )

@@ -1,11 +1,8 @@
-from typing import TYPE_CHECKING, List
-
 from sqlmodel import Field, Relationship, SQLModel
 
-from ..enums.role import Role
+from src.domain.models.eventos_placa import EventosPlaca
 
-if TYPE_CHECKING:
-    from src.domain.models.eventos_placa import EventosPlaca
+from ..enums.role import Role
 
 
 class User(SQLModel, table=True):
@@ -39,7 +36,6 @@ class User(SQLModel, table=True):
         default=True, nullable=False, description="Status de atividade do usuário"
     )
 
-    eventos_criados: List["EventosPlaca"] = Relationship(
-        back_populates="created_by_user",
-        sa_relationship_kwargs={"lazy": "selectin"}
+    eventos_criados: list[EventosPlaca] = Relationship(
+        back_populates="created_by_user"
     )
