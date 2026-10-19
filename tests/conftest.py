@@ -37,6 +37,7 @@ async def engine():
 
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.drop_all)
+        await conn.execute(text("DROP TABLE IF EXISTS alembic_version;"))
 
     await engine.dispose()
 
