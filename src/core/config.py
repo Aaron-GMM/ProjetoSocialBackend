@@ -1,7 +1,9 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
     PROJECT_NAME: str = "Caça Placa API"
     VERSION: str = "0.1.0"
     DATABASE_URL: str
@@ -10,20 +12,24 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
-    RESET_TOKEN_EXPIRE_MINUTES: int = 15
+    RESET_TOKEN_EXPIRE_MINUTES: int
 
     # Frontend (usado para montar links enviados por e-mail e regras de CORS)
     FRONTEND_URL: str
 
     # SMTP (Gmail)
-    MAIL_SERVER: str = "smtp.gmail.com"
-    MAIL_PORT: int = 587
-    EMAIL: str = ""
-    EMAIL_PASSWORD: str = ""
+    MAIL_SERVER: str
+    MAIL_PORT: int
+    EMAIL: str
+    EMAIL_PASSWORD: str
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    # MinIO / Object Storage
+    MINIO_ENDPOINT: str
+    MINIO_PUBLIC_URL: str
+    MINIO_APP_ACCESS_KEY: str
+    MINIO_APP_SECRET_KEY: str
+    MINIO_BUCKET_NAME: str
+    MINIO_SECURE: bool
 
 
 settings = Settings()
