@@ -75,8 +75,9 @@ async def create_placa(
             f"POINT({placa_create.longitude} {placa_create.latitude})", srid=4326
         ),
     )
-    endereco = Enderecos(**placa_create.endereco.model_dump())
+    endereco = Enderecos(placa_id=placa.id, **placa_create.endereco.model_dump())
     evento = EventosPlaca(
+        placa_id=placa.id,
         created_by=current_user.id,
         tipo_evento=TipoEvento.CRIACAO,
         estado_conservacao=placa_create.estado_conservacao,

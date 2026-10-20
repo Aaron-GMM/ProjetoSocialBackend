@@ -20,12 +20,16 @@ async def create_placa(
     db: AsyncSession, placa: Placa, endereco: Enderecos, evento: EventosPlaca
 ) -> Placa:
     """Insere a placa, seu endereço e o evento inicial em uma única transação."""
-    placa.endereco = endereco
-    placa.eventos = [evento]
-    db.add(placa)
-    await db.commit()
+    try:
+        placa.endereco = endereco
+        placa.eventos = [evento]
+        db.add(placa)
+        await db.commit()
 
-    for instance in (placa, endereco, evento):
-        await db.refresh(instance)
+        for instance in (placa, endereco, evento):
+            await db.refresh(instance)
 
-    return placa
+        return placa
+    except Exception:
+        await db.rollback()
+        raise

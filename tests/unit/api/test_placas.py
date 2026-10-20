@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -5,12 +7,14 @@ from sqlalchemy import text
 from sqlmodel import func, select
 
 from src.core.security import create_access_token
+from src.domain.enums.placa_enums import CodigoContran, EstadoConservacao, TipoEvento
 from src.domain.enums.role import Role
 from src.domain.models.endereco import Enderecos
 from src.domain.models.eventos_placa import EventosPlaca
 from src.domain.models.placa import Placa
 from src.domain.models.user import User
 from src.infrastructure.database.connection import get_session
+from src.infrastructure.database.functions import placa as placa_functions
 from src.infrastructure.database.functions.user import create_user
 from src.main import app
 
@@ -150,3 +154,29 @@ async def test_create_placa_invalid_payload(
     response = await client.post("/placas/", json=payload, headers=agent_headers)
 
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_placa_rollback_on_commit_error():
+    mock_db = MagicMock()
+    mock_db.commit = AsyncMock(side_effect=RuntimeError("Falha ao persistir"))
+    mock_db.rollback = AsyncMock()
+
+    placa = Placa(codigo_contran=CodigoContran.R_1, location="POINT(-39.01 -4.97)")
+    endereco = Enderecos(
+        placa_id=placa.id,
+        logradouro="Rua Basílio Pinto",
+        bairro="Centro",
+        cep="63900-000",
+    )
+    evento = EventosPlaca(
+        placa_id=placa.id,
+        created_by=1,
+        tipo_evento=TipoEvento.CRIACAO,
+        estado_conservacao=EstadoConservacao.BOM,
+    )
+
+    with pytest.raises(RuntimeError, match="Falha ao persistir"):
+        await placa_functions.create_placa(mock_db, placa, endereco, evento)
+
+    mock_db.rollback.assert_awaited_once()
