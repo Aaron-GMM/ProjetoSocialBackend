@@ -1,0 +1,102 @@
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from geoalchemy2 import WKTElement
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from src.api.deps import get_current_user
+from src.application.schemas.placa_schema import (
+    EnderecoResponse,
+    EventoPlacaResponse,
+    PlacaCreate,
+    PlacaResponse,
+)
+from src.domain.enums.placa_enums import TipoEvento
+from src.domain.models.endereco import Enderecos
+from src.domain.models.eventos_placa import EventosPlaca
+from src.domain.models.placa import Placa
+from src.domain.models.user import User
+from src.infrastructure.database.connection import get_session
+from src.infrastructure.database.functions import placa as placa_functions
+from src.infrastructure.database.functions.geo_validator import is_point_in_municipio
+
+QUIXADA_CODIGO_IBGE = "2311306"
+
+router = APIRouter(prefix="/placas", tags=["Placas"])
+
+
+@router.post(
+    "/",
+    response_model=PlacaResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Cadastra uma nova placa",
+    description=(
+        "Cadastra uma placa a partir de um payload JSON com os dados da placa, "
+        "do endereço e do estado de conservação inicial.\n\n"
+        "**Regras de Negócio:**\n"
+        "- Requer usuário autenticado (Agente ou Administrador).\n"
+        "- As coordenadas devem estar dentro do polígono de Quixadá.\n"
+        "- A Placa, o Endereço e o evento `CRIACAO` são inseridos em uma única "
+        "transação atômica (Append-Only).\n"
+        "- O envio de foto ainda não é suportado: `foto_url` fica `null`."
+    ),
+    response_description="Placa criada com endereço e evento inicial.",
+)
+async def create_placa(
+    placa_create: PlacaCreate,
+    db: Annotated[AsyncSession, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    municipio = await placa_functions.get_municipio_by_codigo_ibge(
+        db, QUIXADA_CODIGO_IBGE
+    )
+    if not municipio:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Município de Quixadá não cadastrado.",
+        )
+
+    is_inside = await is_point_in_municipio(
+        db, placa_create.latitude, placa_create.longitude, municipio.id
+    )
+    if not is_inside:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="As coordenadas da placa estão fora de Quixadá!",
+        )
+
+    placa = Placa(
+        codigo_contran=placa_create.codigo_contran,
+        afastamento=placa_create.afastamento,
+        tipo_pelicula=placa_create.tipo_pelicula,
+        tipo_substrato=placa_create.tipo_substrato,
+        tipo_suporte=placa_create.tipo_suporte,
+        location=WKTElement(
+            f"POINT({placa_create.longitude} {placa_create.latitude})", srid=4326
+        ),
+    )
+    endereco = Enderecos(**placa_create.endereco.model_dump())
+    evento = EventosPlaca(
+        created_by=current_user.id,
+        tipo_evento=TipoEvento.CRIACAO,
+        estado_conservacao=placa_create.estado_conservacao,
+        estado_pelicula=placa_create.estado_pelicula,
+        estado_substrato=placa_create.estado_substrato,
+        estado_suporte=placa_create.estado_suporte,
+        observacao=placa_create.observacao,
+    )
+    created_placa = await placa_functions.create_placa(db, placa, endereco, evento)
+
+    return PlacaResponse(
+        id=created_placa.id,
+        codigo_contran=created_placa.codigo_contran,
+        afastamento=created_placa.afastamento,
+        tipo_pelicula=created_placa.tipo_pelicula,
+        tipo_substrato=created_placa.tipo_substrato,
+        tipo_suporte=created_placa.tipo_suporte,
+        latitude=placa_create.latitude,
+        longitude=placa_create.longitude,
+        created_at=created_placa.created_at,
+        endereco=EnderecoResponse.model_validate(endereco),
+        ultimo_evento=EventoPlacaResponse.model_validate(evento),
+    )
