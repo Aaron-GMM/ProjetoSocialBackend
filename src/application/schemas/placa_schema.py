@@ -110,4 +110,35 @@ class PlacaResponse(BaseModel):
     longitude: float
     created_at: datetime
     endereco: EnderecoResponse
-    ultimo_evento: EventoPlacaResponse
+    ultimo_evento: EventoPlacaResponse | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PlacaQueryParams(BaseModel):
+    """Parâmetros de consulta e filtros para listagem de placas."""
+
+    page: int = Field(default=1, ge=1, description="Número da página")
+    page_size: int = Field(default=20, ge=1, le=100, description="Itens por página")
+
+    min_lng: float | None = Field(None, ge=-180, le=180, description="Longitude mínima")
+    min_lat: float | None = Field(None, ge=-90, le=90, description="Latitude mínima")
+    max_lng: float | None = Field(None, ge=-180, le=180, description="Longitude máxima")
+    max_lat: float | None = Field(None, ge=-90, le=90, description="Latitude máxima")
+
+    bairro: str | None = Field(None, description="Filtro parcial por bairro")
+    logradouro: str | None = Field(None, description="Filtro parcial por logradouro")
+    estado_conservacao: EstadoConservacao | None = Field(
+        None, description="Filtro pelo estado de conservação atual"
+    )
+
+
+class PlacaListResponse(BaseModel):
+    """Schema de resposta paginada da listagem de placas."""
+
+    total: int
+    page: int
+    page_size: int
+    items: list[PlacaResponse]
+
+    model_config = ConfigDict(from_attributes=True)

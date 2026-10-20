@@ -1,7 +1,8 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from geoalchemy2 import WKTElement
+from sqlalchemy import func, select, true
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.api.deps import get_current_user
@@ -9,6 +10,8 @@ from src.application.schemas.placa_schema import (
     EnderecoResponse,
     EventoPlacaResponse,
     PlacaCreate,
+    PlacaListResponse,
+    PlacaQueryParams,
     PlacaResponse,
 )
 from src.domain.enums.placa_enums import TipoEvento
@@ -100,4 +103,136 @@ async def create_placa(
         created_at=created_placa.created_at,
         endereco=EnderecoResponse.model_validate(endereco),
         ultimo_evento=EventoPlacaResponse.model_validate(evento),
+    )
+
+
+@router.get(
+    "/",
+    response_model=PlacaListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Lista placas com filtros e estado atual",
+    description=(
+        "Recupera uma lista paginada de placas unificando Endereço "
+        "e o último EventoPlaca.\n\n"
+        "**Recursos e Filtros:**\n"
+        "- Bounding Box espacial via `ST_MakeEnvelope` e `ST_Within`.\n"
+        "- Lateral Join para evitar o problema de N+1 queries.\n"
+        "- Filtros parciais por bairro e logradouro (case-insensitive).\n"
+        "- Filtro por estado de conservação atual da placa."
+    ),
+    response_description="Lista paginada de placas com endereço e último evento.",
+)
+async def list_placas(
+    params: Annotated[PlacaQueryParams, Query()],
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    ultimo_evento_sub = (
+        select(
+            EventosPlaca.id.label("ev_id"),
+            EventosPlaca.created_by.label("ev_created_by"),
+            EventosPlaca.tipo_evento.label("ev_tipo_evento"),
+            EventosPlaca.estado_conservacao.label("ev_estado_conservacao"),
+            EventosPlaca.estado_pelicula.label("ev_estado_pelicula"),
+            EventosPlaca.estado_substrato.label("ev_estado_substrato"),
+            EventosPlaca.estado_suporte.label("ev_estado_suporte"),
+            EventosPlaca.foto_url.label("ev_foto_url"),
+            EventosPlaca.observacao.label("ev_observacao"),
+            EventosPlaca.timestamp.label("ev_timestamp"),
+        )
+        .where(EventosPlaca.placa_id == Placa.id)
+        .order_by(EventosPlaca.timestamp.desc())
+        .limit(1)
+        .correlate(Placa)
+        .subquery()
+        .lateral("ultimo_evento")
+    )
+
+    stmt = (
+        select(
+            Placa,
+            Enderecos,
+            func.ST_Y(Placa.location).label("latitude"),
+            func.ST_X(Placa.location).label("longitude"),
+            ultimo_evento_sub,
+        )
+        .join(Enderecos, Placa.id == Enderecos.placa_id)
+        .outerjoin(ultimo_evento_sub, true())
+    )
+
+    if (
+        params.min_lng is not None
+        and params.min_lat is not None
+        and params.max_lng is not None
+        and params.max_lat is not None
+    ):
+        envelope = func.ST_MakeEnvelope(
+            params.min_lng,
+            params.min_lat,
+            params.max_lng,
+            params.max_lat,
+            4326,
+        )
+        stmt = stmt.where(func.ST_Within(Placa.location, envelope))
+
+    if params.bairro:
+        stmt = stmt.where(Enderecos.bairro.ilike(f"%{params.bairro}%"))
+    if params.logradouro:
+        stmt = stmt.where(Enderecos.logradouro.ilike(f"%{params.logradouro}%"))
+    if params.estado_conservacao:
+        stmt = stmt.where(
+            ultimo_evento_sub.c.ev_estado_conservacao == params.estado_conservacao
+        )
+
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = (await session.execute(count_stmt)).scalar_one()
+
+    offset = (params.page - 1) * params.page_size
+    stmt = stmt.order_by(Placa.created_at.desc()).offset(offset).limit(params.page_size)
+
+    result = await session.execute(stmt)
+    rows = result.all()
+
+    items: list[PlacaResponse] = []
+    for row in rows:
+        placa = row[0]
+        endereco = row[1]
+        lat = row.latitude
+        lng = row.longitude
+
+        evento_response = None
+        if row.ev_id is not None:
+            evento_response = EventoPlacaResponse(
+                id=row.ev_id,
+                created_by=row.ev_created_by,
+                tipo_evento=row.ev_tipo_evento,
+                estado_conservacao=row.ev_estado_conservacao,
+                estado_pelicula=row.ev_estado_pelicula,
+                estado_substrato=row.ev_estado_substrato,
+                estado_suporte=row.ev_estado_suporte,
+                foto_url=row.ev_foto_url,
+                observacao=row.ev_observacao,
+                timestamp=row.ev_timestamp,
+            )
+
+        items.append(
+            PlacaResponse(
+                id=placa.id,
+                codigo_contran=placa.codigo_contran,
+                afastamento=placa.afastamento,
+                tipo_pelicula=placa.tipo_pelicula,
+                tipo_substrato=placa.tipo_substrato,
+                tipo_suporte=placa.tipo_suporte,
+                latitude=lat,
+                longitude=lng,
+                created_at=placa.created_at,
+                endereco=EnderecoResponse.model_validate(endereco),
+                ultimo_evento=evento_response,
+            )
+        )
+
+    return PlacaListResponse(
+        total=total,
+        page=params.page,
+        page_size=params.page_size,
+        items=items,
     )
