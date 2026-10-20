@@ -40,6 +40,9 @@ addopts = "--cov=src --cov-report=term-missing --cov-report=xml"
 testpaths = ["tests"]
 pythonpath = ["."]
 
+[tool.coverage.run]
+concurrency = ["greenlet", "thread"]
+
 [tool.ruff]
 line-length = 88
 target-version = "py312"

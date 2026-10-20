@@ -31,6 +31,7 @@ async def engine():
     async with engine.begin() as conn:
         # Habilita a extensão postgis no banco de testes (caso ainda não tenha)
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis;"))
+        await conn.run_sync(SQLModel.metadata.drop_all)
         await conn.run_sync(SQLModel.metadata.create_all)
 
     yield engine
