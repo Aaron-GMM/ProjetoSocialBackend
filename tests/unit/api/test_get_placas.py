@@ -1,10 +1,17 @@
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock
+from uuid import UUID
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
+from src.api.routes import placas as placas_route
 from src.core.security import create_access_token
+from src.domain.enums.placa_enums import EstadoConservacao, TipoEvento
 from src.domain.enums.role import Role
+from src.domain.models.eventos_placa import EventosPlaca
 from src.domain.models.user import User
 from src.infrastructure.database.connection import get_session
 from src.infrastructure.database.functions.user import create_user
@@ -14,24 +21,26 @@ QUIXADA_POLIGONO = (
     "POLYGON((-39.15 -5.05, -38.90 -5.05, -38.90 -4.85, -39.15 -4.85, -39.15 -5.05))"
 )
 
-PAYLOAD = {
+FORM_DATA = {
     "codigo_contran": "R-1",
-    "afastamento": 1.5,
+    "afastamento": "1.5",
     "tipo_pelicula": "TIPO_I",
     "tipo_substrato": "ACO",
     "tipo_suporte": "POSTE_ACO",
-    "latitude": -4.9714,
-    "longitude": -39.0154,
-    "endereco": {
-        "logradouro": "Rua Basílio Pinto",
-        "bairro": "Centro",
-        "cep": "63900-000",
-        "referencia": "Em frente à praça",
-    },
+    "latitude": "-4.9714",
+    "longitude": "-39.0154",
+    "logradouro": "Rua Basílio Pinto",
+    "bairro": "Centro",
+    "cep": "63900-000",
+    "referencia": "Em frente à praça",
     "estado_conservacao": "BOM",
     "estado_pelicula": "REGULAR",
     "observacao": "Placa nova",
 }
+
+FAKE_JPEG_BYTES = (
+    b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9"
+)
 
 
 @pytest_asyncio.fixture
@@ -45,6 +54,24 @@ async def client(db_session):
     ) as ac:
         yield ac
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def mock_minio(monkeypatch):
+    mock_service = MagicMock()
+    mock_service.ensure_bucket_exists_async = AsyncMock(return_value=None)
+    mock_service.upload_file_async = AsyncMock(
+        return_value="placas/2026/10/20/placas_123_abcd1234.jpg"
+    )
+    mock_service.get_presigned_url_async = AsyncMock(
+        return_value=(
+            "http://localhost:9000/cacaplaca-images/placas/2026/10/20/"
+            "placas_123_abcd1234.jpg?X-Amz-Signature=123"
+        )
+    )
+    mock_service.delete_file_async = AsyncMock(return_value=None)
+    monkeypatch.setattr(placas_route, "minio_service", mock_service)
+    return mock_service
 
 
 @pytest_asyncio.fixture
@@ -80,29 +107,45 @@ def agent_headers(agent_user):
 async def cadastrar_placa(
     client: AsyncClient,
     headers: dict,
-    latitude: float = PAYLOAD["latitude"],
-    longitude: float = PAYLOAD["longitude"],
+    latitude: float = -4.9714,
+    longitude: float = -39.0154,
     bairro: str = "Centro",
     logradouro: str = "Rua Basílio Pinto",
     estado_conservacao: str = "BOM",
 ) -> dict:
-    payload = {
-        **PAYLOAD,
-        "latitude": latitude,
-        "longitude": longitude,
+    data = {
+        **FORM_DATA,
+        "latitude": str(latitude),
+        "longitude": str(longitude),
+        "bairro": bairro,
+        "logradouro": logradouro,
         "estado_conservacao": estado_conservacao,
-        "endereco": {**PAYLOAD["endereco"], "bairro": bairro, "logradouro": logradouro},
     }
-    response = await client.post("/placas/", json=payload, headers=headers)
+    files = {"foto": ("placa.jpg", FAKE_JPEG_BYTES, "image/jpeg")}
+    response = await client.post("/placas/", data=data, files=files, headers=headers)
     assert response.status_code == 201, response.json()
     return response.json()
 
 
 @pytest.mark.asyncio
 async def test_get_placas_success_e_ultimo_evento(
-    client: AsyncClient, quixada, agent_headers
+    client: AsyncClient, db_session, quixada, agent_user, agent_headers, mock_minio
 ):
+    agent_id = agent_user.id
     placa = await cadastrar_placa(client, agent_headers)
+
+    # Insere um evento mais recente (VISTORIA) com foto para validar o Join Lateral
+    vistoria = EventosPlaca(
+        placa_id=UUID(placa["id"]),
+        created_by=agent_id,
+        tipo_evento=TipoEvento.VISTORIA,
+        estado_conservacao=EstadoConservacao.RUIM,
+        foto_url="placas/2026/10/20/vistoria_999.jpg",
+        observacao="Placa sofreu avaria",
+        timestamp=datetime.now(UTC) + timedelta(minutes=5),
+    )
+    db_session.add(vistoria)
+    await db_session.commit()
 
     response = await client.get("/placas/")
 
@@ -111,10 +154,13 @@ async def test_get_placas_success_e_ultimo_evento(
     assert data["total"] == 1
     item = data["items"][0]
     assert item["id"] == placa["id"]
-    assert item["ultimo_evento"]["tipo_evento"] == "CRIACAO"
-    assert item["ultimo_evento"]["estado_conservacao"] == "BOM"
-    assert item["latitude"] == pytest.approx(PAYLOAD["latitude"], rel=1e-3)
-    assert item["longitude"] == pytest.approx(PAYLOAD["longitude"], rel=1e-3)
+    assert item["ultimo_evento"]["tipo_evento"] == "VISTORIA"
+    assert item["ultimo_evento"]["estado_conservacao"] == "RUIM"
+    assert item["ultimo_evento"]["foto_url"].startswith(
+        "http://localhost:9000/cacaplaca-images/"
+    )
+    assert item["latitude"] == pytest.approx(-4.9714, rel=1e-3)
+    assert item["longitude"] == pytest.approx(-39.0154, rel=1e-3)
 
 
 @pytest.mark.asyncio

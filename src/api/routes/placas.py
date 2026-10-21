@@ -1,8 +1,8 @@
+from contextlib import suppress
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from geoalchemy2 import WKTElement
-from sqlalchemy import func, select, true
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.api.deps import get_current_user
@@ -22,8 +22,10 @@ from src.domain.models.user import User
 from src.infrastructure.database.connection import get_session
 from src.infrastructure.database.functions import placa as placa_functions
 from src.infrastructure.database.functions.geo_validator import is_point_in_municipio
+from src.infrastructure.storage.minio_client import StorageError, minio_service
 
 QUIXADA_CODIGO_IBGE = "2311306"
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 router = APIRouter(prefix="/placas", tags=["Placas"])
 
@@ -32,24 +34,43 @@ router = APIRouter(prefix="/placas", tags=["Placas"])
     "/",
     response_model=PlacaResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Cadastra uma nova placa",
+    summary="Cadastra uma nova placa com foto",
     description=(
-        "Cadastra uma placa a partir de um payload JSON com os dados da placa, "
-        "do endereço e do estado de conservação inicial.\n\n"
+        "Cadastra uma placa via `multipart/form-data` com os dados da placa, "
+        "do endereço, do estado de conservação inicial e a foto obrigatória.\n\n"
         "**Regras de Negócio:**\n"
         "- Requer usuário autenticado (Agente ou Administrador).\n"
+        "- Valida o tipo da imagem (`image/jpeg`, `image/png`, `image/webp`).\n"
         "- As coordenadas devem estar dentro do polígono de Quixadá.\n"
+        "- Realiza o upload da foto para o MinIO antes do commit no banco.\n"
         "- A Placa, o Endereço e o evento `CRIACAO` são inseridos em uma única "
-        "transação atômica (Append-Only).\n"
-        "- O envio de foto ainda não é suportado: `foto_url` fica `null`."
+        "transação atômica (Append-Only). Caso o banco falhe, o arquivo órfão "
+        "é removido do MinIO."
     ),
-    response_description="Placa criada com endereço e evento inicial.",
+    response_description="Placa criada com endereço, evento inicial e URL da foto.",
 )
 async def create_placa(
-    placa_create: PlacaCreate,
+    placa_create: Annotated[PlacaCreate, Depends(PlacaCreate.as_form)],
+    foto: Annotated[
+        UploadFile,
+        File(..., description="Arquivo de imagem da placa (JPEG, PNG ou WEBP)"),
+    ],
     db: Annotated[AsyncSession, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
+    if foto.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Formato de imagem inválido. Envie JPEG, PNG ou WEBP.",
+        )
+
+    file_bytes = await foto.read()
+    if not file_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="O arquivo de imagem enviado está vazio.",
+        )
+
     municipio = await placa_functions.get_municipio_by_codigo_ibge(
         db, QUIXADA_CODIGO_IBGE
     )
@@ -78,6 +99,22 @@ async def create_placa(
             f"POINT({placa_create.longitude} {placa_create.latitude})", srid=4326
         ),
     )
+
+    try:
+        await minio_service.ensure_bucket_exists_async()
+        object_name = await minio_service.upload_file_async(
+            file_data=file_bytes,
+            filename=foto.filename or "placa.jpg",
+            content_type=foto.content_type,
+            context="placas",
+            entity_id=str(placa.id),
+        )
+    except StorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Serviço de armazenamento de imagens indisponível no momento.",
+        ) from exc
+
     endereco = Enderecos(placa_id=placa.id, **placa_create.endereco.model_dump())
     evento = EventosPlaca(
         placa_id=placa.id,
@@ -87,9 +124,22 @@ async def create_placa(
         estado_pelicula=placa_create.estado_pelicula,
         estado_substrato=placa_create.estado_substrato,
         estado_suporte=placa_create.estado_suporte,
+        foto_url=object_name,
         observacao=placa_create.observacao,
     )
-    created_placa = await placa_functions.create_placa(db, placa, endereco, evento)
+
+    try:
+        created_placa = await placa_functions.create_placa(db, placa, endereco, evento)
+    except Exception:
+        with suppress(StorageError):
+            await minio_service.delete_file_async(object_name)
+        raise
+
+    evento_response = EventoPlacaResponse.model_validate(evento)
+    with suppress(StorageError):
+        evento_response.foto_url = await minio_service.get_presigned_url_async(
+            object_name
+        )
 
     return PlacaResponse(
         id=created_placa.id,
@@ -102,7 +152,7 @@ async def create_placa(
         longitude=placa_create.longitude,
         created_at=created_placa.created_at,
         endereco=EnderecoResponse.model_validate(endereco),
-        ultimo_evento=EventoPlacaResponse.model_validate(evento),
+        ultimo_evento=evento_response,
     )
 
 
@@ -126,71 +176,7 @@ async def list_placas(
     params: Annotated[PlacaQueryParams, Query()],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
-    ultimo_evento_sub = (
-        select(
-            EventosPlaca.id.label("ev_id"),
-            EventosPlaca.created_by.label("ev_created_by"),
-            EventosPlaca.tipo_evento.label("ev_tipo_evento"),
-            EventosPlaca.estado_conservacao.label("ev_estado_conservacao"),
-            EventosPlaca.estado_pelicula.label("ev_estado_pelicula"),
-            EventosPlaca.estado_substrato.label("ev_estado_substrato"),
-            EventosPlaca.estado_suporte.label("ev_estado_suporte"),
-            EventosPlaca.foto_url.label("ev_foto_url"),
-            EventosPlaca.observacao.label("ev_observacao"),
-            EventosPlaca.timestamp.label("ev_timestamp"),
-        )
-        .where(EventosPlaca.placa_id == Placa.id)
-        .order_by(EventosPlaca.timestamp.desc())
-        .limit(1)
-        .correlate(Placa)
-        .subquery()
-        .lateral("ultimo_evento")
-    )
-
-    stmt = (
-        select(
-            Placa,
-            Enderecos,
-            func.ST_Y(Placa.location).label("latitude"),
-            func.ST_X(Placa.location).label("longitude"),
-            ultimo_evento_sub,
-        )
-        .join(Enderecos, Placa.id == Enderecos.placa_id)
-        .outerjoin(ultimo_evento_sub, true())
-    )
-
-    if (
-        params.min_lng is not None
-        and params.min_lat is not None
-        and params.max_lng is not None
-        and params.max_lat is not None
-    ):
-        envelope = func.ST_MakeEnvelope(
-            params.min_lng,
-            params.min_lat,
-            params.max_lng,
-            params.max_lat,
-            4326,
-        )
-        stmt = stmt.where(func.ST_Within(Placa.location, envelope))
-
-    if params.bairro:
-        stmt = stmt.where(Enderecos.bairro.ilike(f"%{params.bairro}%"))
-    if params.logradouro:
-        stmt = stmt.where(Enderecos.logradouro.ilike(f"%{params.logradouro}%"))
-    if params.estado_conservacao:
-        stmt = stmt.where(
-            ultimo_evento_sub.c.ev_estado_conservacao == params.estado_conservacao
-        )
-
-    count_stmt = select(func.count()).select_from(stmt.subquery())
-    total = (await session.execute(count_stmt)).scalar_one()
-
-    offset = (params.page - 1) * params.page_size
-    stmt = stmt.order_by(Placa.created_at.desc()).offset(offset).limit(params.page_size)
-
-    result = await session.execute(stmt)
-    rows = result.all()
+    total, rows = await placa_functions.list_placas(session, params)
 
     items: list[PlacaResponse] = []
     for row in rows:
@@ -201,6 +187,11 @@ async def list_placas(
 
         evento_response = None
         if row.ev_id is not None:
+            foto_url = row.ev_foto_url
+            if foto_url:
+                with suppress(StorageError):
+                    foto_url = await minio_service.get_presigned_url_async(foto_url)
+
             evento_response = EventoPlacaResponse(
                 id=row.ev_id,
                 created_by=row.ev_created_by,
@@ -209,7 +200,7 @@ async def list_placas(
                 estado_pelicula=row.ev_estado_pelicula,
                 estado_substrato=row.ev_estado_substrato,
                 estado_suporte=row.ev_estado_suporte,
-                foto_url=row.ev_foto_url,
+                foto_url=foto_url,
                 observacao=row.ev_observacao,
                 timestamp=row.ev_timestamp,
             )

@@ -1,4 +1,3 @@
-version: "3.8"
 services:
   api:
     build: .
@@ -47,8 +46,7 @@ services:
       retries: 5
 
   minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
+    image: bitnamilegacy/minio:latest
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
@@ -56,19 +54,20 @@ services:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - minio_data:/data
+      - minio_data:/bitnami/minio/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "mc", "--config-dir", "/tmp/.mc", "ready", "local"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   minio-init:
-    image: minio/mc:latest
+    image: bitnamilegacy/minio:latest
     depends_on:
       minio:
         condition: service_healthy
     environment:
+      - HOME=/tmp
       - MINIO_ROOT_USER=${MINIO_ROOT_USER}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
       - MINIO_BUCKET_NAME=${MINIO_BUCKET_NAME}

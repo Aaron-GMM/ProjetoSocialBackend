@@ -36,4 +36,6 @@ class User(SQLModel, table=True):
         default=True, nullable=False, description="Status de atividade do usuário"
     )
 
-    eventos_criados: list[EventosPlaca] = Relationship(back_populates="created_by_user")
+    eventos_criados: list[EventosPlaca] = Relationship(
+        back_populates="created_by_user"
+    )
