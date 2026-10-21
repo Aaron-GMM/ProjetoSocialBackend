@@ -1,7 +1,7 @@
 from contextlib import suppress
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from geoalchemy2 import WKTElement
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -10,6 +10,8 @@ from src.application.schemas.placa_schema import (
     EnderecoResponse,
     EventoPlacaResponse,
     PlacaCreate,
+    PlacaListResponse,
+    PlacaQueryParams,
     PlacaResponse,
 )
 from src.domain.enums.placa_enums import TipoEvento
@@ -151,4 +153,77 @@ async def create_placa(
         created_at=created_placa.created_at,
         endereco=EnderecoResponse.model_validate(endereco),
         ultimo_evento=evento_response,
+    )
+
+
+@router.get(
+    "/",
+    response_model=PlacaListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Lista placas com filtros e estado atual",
+    description=(
+        "Recupera uma lista paginada de placas unificando Endereço "
+        "e o último EventoPlaca.\n\n"
+        "**Recursos e Filtros:**\n"
+        "- Bounding Box espacial via `ST_MakeEnvelope` e `ST_Within`.\n"
+        "- Lateral Join para evitar o problema de N+1 queries.\n"
+        "- Filtros parciais por bairro e logradouro (case-insensitive).\n"
+        "- Filtro por estado de conservação atual da placa."
+    ),
+    response_description="Lista paginada de placas com endereço e último evento.",
+)
+async def list_placas(
+    params: Annotated[PlacaQueryParams, Query()],
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    total, rows = await placa_functions.list_placas(session, params)
+
+    items: list[PlacaResponse] = []
+    for row in rows:
+        placa = row[0]
+        endereco = row[1]
+        lat = row.latitude
+        lng = row.longitude
+
+        evento_response = None
+        if row.ev_id is not None:
+            foto_url = row.ev_foto_url
+            if foto_url:
+                with suppress(StorageError):
+                    foto_url = await minio_service.get_presigned_url_async(foto_url)
+
+            evento_response = EventoPlacaResponse(
+                id=row.ev_id,
+                created_by=row.ev_created_by,
+                tipo_evento=row.ev_tipo_evento,
+                estado_conservacao=row.ev_estado_conservacao,
+                estado_pelicula=row.ev_estado_pelicula,
+                estado_substrato=row.ev_estado_substrato,
+                estado_suporte=row.ev_estado_suporte,
+                foto_url=foto_url,
+                observacao=row.ev_observacao,
+                timestamp=row.ev_timestamp,
+            )
+
+        items.append(
+            PlacaResponse(
+                id=placa.id,
+                codigo_contran=placa.codigo_contran,
+                afastamento=placa.afastamento,
+                tipo_pelicula=placa.tipo_pelicula,
+                tipo_substrato=placa.tipo_substrato,
+                tipo_suporte=placa.tipo_suporte,
+                latitude=lat,
+                longitude=lng,
+                created_at=placa.created_at,
+                endereco=EnderecoResponse.model_validate(endereco),
+                ultimo_evento=evento_response,
+            )
+        )
+
+    return PlacaListResponse(
+        total=total,
+        page=params.page,
+        page_size=params.page_size,
+        items=items,
     )
