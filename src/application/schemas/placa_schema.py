@@ -1,6 +1,8 @@
 from datetime import datetime
+from typing import Annotated
 from uuid import UUID
 
+from fastapi import Form
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.domain.enums.placa_enums import (
@@ -66,6 +68,77 @@ class PlacaCreate(BaseModel):
     observacao: str | None = Field(
         None, description="Observação sobre a placa", examples=["Placa inclinada"]
     )
+
+    @classmethod
+    def as_form(
+        cls,
+        codigo_contran: Annotated[
+            CodigoContran, Form(description="Código Contran da placa")
+        ],
+        latitude: Annotated[
+            float, Form(ge=-90, le=90, description="Latitude (WGS 84)")
+        ],
+        longitude: Annotated[
+            float, Form(ge=-180, le=180, description="Longitude (WGS 84)")
+        ],
+        logradouro: Annotated[str, Form(min_length=1, description="Logradouro")],
+        bairro: Annotated[str, Form(min_length=1, description="Bairro")],
+        cep: Annotated[str, Form(min_length=1, description="CEP")],
+        estado_conservacao: Annotated[
+            EstadoConservacao, Form(description="Estado geral de conservação")
+        ],
+        referencia: Annotated[
+            str | None, Form(description="Ponto de referência")
+        ] = None,
+        afastamento: Annotated[
+            float | None, Form(ge=0, description="Distância do bordo em metros")
+        ] = None,
+        tipo_pelicula: Annotated[
+            TipoPelicula | None, Form(description="Tipo de película")
+        ] = None,
+        tipo_substrato: Annotated[
+            TipoSubstrato | None, Form(description="Tipo de substrato")
+        ] = None,
+        tipo_suporte: Annotated[
+            TipoSuporte | None, Form(description="Tipo de suporte")
+        ] = None,
+        estado_pelicula: Annotated[
+            EstadoConservacao | None,
+            Form(description="Estado de conservação da película"),
+        ] = None,
+        estado_substrato: Annotated[
+            EstadoConservacao | None,
+            Form(description="Estado de conservação do substrato"),
+        ] = None,
+        estado_suporte: Annotated[
+            EstadoConservacao | None,
+            Form(description="Estado de conservação do suporte"),
+        ] = None,
+        observacao: Annotated[
+            str | None, Form(description="Observação sobre a placa")
+        ] = None,
+    ) -> "PlacaCreate":
+        """Constrói o schema PlacaCreate a partir de campos multipart/form-data."""
+        return cls(
+            codigo_contran=codigo_contran,
+            afastamento=afastamento,
+            tipo_pelicula=tipo_pelicula,
+            tipo_substrato=tipo_substrato,
+            tipo_suporte=tipo_suporte,
+            latitude=latitude,
+            longitude=longitude,
+            endereco=EnderecoCreate(
+                logradouro=logradouro,
+                bairro=bairro,
+                cep=cep,
+                referencia=referencia,
+            ),
+            estado_conservacao=estado_conservacao,
+            estado_pelicula=estado_pelicula,
+            estado_substrato=estado_substrato,
+            estado_suporte=estado_suporte,
+            observacao=observacao,
+        )
 
 
 class EnderecoResponse(BaseModel):
