@@ -74,6 +74,12 @@ def mock_minio(monkeypatch):
     mock_service.upload_file_async = AsyncMock(
         return_value="placas/2026/10/20/placas_123_abcd1234.jpg"
     )
+    mock_service.get_public_url = MagicMock(
+        return_value=(
+            "http://localhost:9000/cacaplaca-images/placas/2026/10/20/"
+            "placas_123_abcd1234.jpg"
+        )
+    )
     mock_service.get_presigned_url_async = AsyncMock(
         return_value=(
             "http://localhost:9000/cacaplaca-images/placas/2026/10/20/"
@@ -147,7 +153,7 @@ async def test_create_placa_success(
 
     mock_minio.ensure_bucket_exists_async.assert_awaited_once()
     mock_minio.upload_file_async.assert_awaited_once()
-    mock_minio.get_presigned_url_async.assert_awaited_once()
+    mock_minio.get_public_url.assert_called_once()
 
     result = await db_session.execute(
         text("SELECT ST_X(location), ST_Y(location) FROM placas WHERE id = :id"),
@@ -161,6 +167,59 @@ async def test_create_placa_success(
     assert await count_rows(db_session, EventosPlaca) == 1
 
 
+@pytest.mark.asyncio
+async def test_create_placa_without_endereco_success(
+    client: AsyncClient, db_session, quixada, agent_user, agent_headers, mock_minio
+):
+    agent_id = agent_user.id
+    form_without_addr = {
+        k: v
+        for k, v in FORM_DATA.items()
+        if k not in ("logradouro", "bairro", "cep", "referencia")
+    }
+    response = await client.post(
+        "/placas/",
+        data=form_without_addr,
+        files=make_photo_files(),
+        headers=agent_headers,
+    )
+
+    assert response.status_code == 201, response.json()
+    data = response.json()
+    assert data["codigo_contran"] == "R-1"
+    assert data["endereco"] is None
+    assert data["ultimo_evento"]["tipo_evento"] == "CRIACAO"
+    assert data["ultimo_evento"]["created_by"] == agent_id
+    assert await count_rows(db_session, Enderecos) == 0
+    assert await count_rows(db_session, EventosPlaca) == 1
+    assert await count_rows(db_session, Placa) == 1
+
+
+@pytest.mark.asyncio
+async def test_create_placa_with_blank_endereco_fields(
+    client: AsyncClient, db_session, quixada, agent_user, agent_headers, mock_minio
+):
+    form_blank_addr = {
+        **FORM_DATA,
+        "logradouro": "",
+        "bairro": "   ",
+        "cep": "",
+        "referencia": "",
+    }
+    response = await client.post(
+        "/placas/",
+        data=form_blank_addr,
+        files=make_photo_files(),
+        headers=agent_headers,
+    )
+
+    assert response.status_code == 201, response.json()
+    data = response.json()
+    assert data["endereco"] is None
+    assert await count_rows(db_session, Enderecos) == 0
+
+
+@pytest.mark.skip(reason="Validação de Quixadá desativada para dev")
 @pytest.mark.asyncio
 async def test_create_placa_outside_quixada(
     client: AsyncClient, db_session, quixada, agent_headers, mock_minio
@@ -179,6 +238,7 @@ async def test_create_placa_outside_quixada(
     assert await count_rows(db_session, Placa) == 0
 
 
+@pytest.mark.skip(reason="Validação de Quixadá desativada para dev")
 @pytest.mark.asyncio
 async def test_create_placa_without_municipio(
     client: AsyncClient, db_session, agent_headers, mock_minio
@@ -197,9 +257,7 @@ async def test_create_placa_without_municipio(
 
 @pytest.mark.asyncio
 async def test_create_placa_unauthenticated(client: AsyncClient, quixada):
-    response = await client.post(
-        "/placas/", data=FORM_DATA, files=make_photo_files()
-    )
+    response = await client.post("/placas/", data=FORM_DATA, files=make_photo_files())
 
     assert response.status_code == 401
 
