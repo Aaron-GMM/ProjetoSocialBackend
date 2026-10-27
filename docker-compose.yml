@@ -50,9 +50,10 @@ services:
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - MINIO_BROWSER=on
     ports:
       - "9000:9000"
-      - "9001:9001"
+      - "9002:9001"
     volumes:
       - minio_data:/bitnami/minio/data
     healthcheck:
@@ -77,6 +78,7 @@ services:
       /bin/sh -c "
       mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD;
       mc mb --ignore-existing local/$$MINIO_BUCKET_NAME;
+      mc anonymous set download local/$$MINIO_BUCKET_NAME;
       mc admin user add local $$MINIO_APP_ACCESS_KEY $$MINIO_APP_SECRET_KEY || true;
       mc admin policy attach local readwrite --user $$MINIO_APP_ACCESS_KEY;
       echo 'MinIO provisionado com sucesso com Service Account dedicada!';
