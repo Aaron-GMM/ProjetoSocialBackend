@@ -176,6 +176,21 @@ class MinioStorageService:
             bucket_name=bucket_name,
         )
 
+    def get_public_url(self, object_name: str, bucket_name: str | None = None) -> str:
+        """Gera URL pública direta e limpa para visualização (sem assinatura S3)."""
+        target_bucket = bucket_name or self.bucket_name
+        base = (self.public_url or f"http://{self.endpoint}").rstrip("/")
+        if not base.startswith(("http://", "https://")):
+            scheme = "https" if self.secure else "http"
+            base = f"{scheme}://{base}"
+        return f"{base}/{target_bucket}/{object_name.lstrip('/')}"
+
+    async def get_public_url_async(
+        self, object_name: str, bucket_name: str | None = None
+    ) -> str:
+        """Wrapper assíncrono para get_public_url."""
+        return self.get_public_url(object_name, bucket_name)
+
     def get_presigned_url(
         self,
         object_name: str,
