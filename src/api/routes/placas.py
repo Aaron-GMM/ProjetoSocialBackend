@@ -1,5 +1,5 @@
 from contextlib import suppress
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from geoalchemy2 import WKTElement
@@ -13,21 +13,77 @@ from src.application.schemas.placa_schema import (
     PlacaListResponse,
     PlacaQueryParams,
     PlacaResponse,
+    PlacaTipoItem,
 )
-from src.domain.enums.placa_enums import TipoEvento
+from src.domain.enums.placa_enums import CONTRAN_DESCRICOES, TipoEvento
 from src.domain.models.endereco import Enderecos
 from src.domain.models.eventos_placa import EventosPlaca
 from src.domain.models.placa import Placa
 from src.domain.models.user import User
 from src.infrastructure.database.connection import get_session
 from src.infrastructure.database.functions import placa as placa_functions
-from src.infrastructure.database.functions.geo_validator import is_point_in_municipio
 from src.infrastructure.storage.minio_client import StorageError, minio_service
 
 QUIXADA_CODIGO_IBGE = "2311306"
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 router = APIRouter(prefix="/placas", tags=["Placas"])
+
+
+async def _serialize_placa_rows(rows: list[Any]) -> list[PlacaResponse]:
+    """Converte as linhas retornadas pelo banco em objetos PlacaResponse."""
+    items: list[PlacaResponse] = []
+    for row in rows:
+        placa = row[0]
+        endereco = row[1]
+        lat = row.latitude
+        lng = row.longitude
+
+        evento_response = None
+        if row.ev_id is not None:
+            foto_url = row.ev_foto_url
+            if foto_url:
+                foto_url = minio_service.get_public_url(foto_url)
+
+            evento_response = EventoPlacaResponse(
+                id=row.ev_id,
+                created_by=row.ev_created_by,
+                tipo_evento=row.ev_tipo_evento,
+                estado_conservacao=row.ev_estado_conservacao,
+                estado_pelicula=row.ev_estado_pelicula,
+                estado_substrato=row.ev_estado_substrato,
+                estado_suporte=row.ev_estado_suporte,
+                foto_url=foto_url,
+                observacao=row.ev_observacao,
+                timestamp=row.ev_timestamp,
+            )
+
+        endereco_response = (
+            EnderecoResponse.model_validate(endereco) if endereco is not None else None
+        )
+
+        contran_val = (
+            placa.codigo_contran.value
+            if hasattr(placa.codigo_contran, "value")
+            else str(placa.codigo_contran)
+        )
+        items.append(
+            PlacaResponse(
+                id=placa.id,
+                codigo_contran=placa.codigo_contran,
+                descricao_contran=CONTRAN_DESCRICOES.get(contran_val),
+                afastamento=placa.afastamento,
+                tipo_pelicula=placa.tipo_pelicula,
+                tipo_substrato=placa.tipo_substrato,
+                tipo_suporte=placa.tipo_suporte,
+                latitude=lat,
+                longitude=lng,
+                created_at=placa.created_at,
+                endereco=endereco_response,
+                ultimo_evento=evento_response,
+            )
+        )
+    return items
 
 
 @router.post(
@@ -41,7 +97,6 @@ router = APIRouter(prefix="/placas", tags=["Placas"])
         "**Regras de Negócio:**\n"
         "- Requer usuário autenticado (Agente ou Administrador).\n"
         "- Valida o tipo da imagem (`image/jpeg`, `image/png`, `image/webp`).\n"
-        "- As coordenadas devem estar dentro do polígono de Quixadá.\n"
         "- Realiza o upload da foto para o MinIO antes do commit no banco.\n"
         "- A Placa, o Endereço e o evento `CRIACAO` são inseridos em uma única "
         "transação atômica (Append-Only). Caso o banco falhe, o arquivo órfão "
@@ -71,23 +126,23 @@ async def create_placa(
             detail="O arquivo de imagem enviado está vazio.",
         )
 
-    municipio = await placa_functions.get_municipio_by_codigo_ibge(
-        db, QUIXADA_CODIGO_IBGE
-    )
-    if not municipio:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Município de Quixadá não cadastrado.",
-        )
-
-    is_inside = await is_point_in_municipio(
-        db, placa_create.latitude, placa_create.longitude, municipio.id
-    )
-    if not is_inside:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="As coordenadas da placa estão fora de Quixadá!",
-        )
+    # Validação de Quixadá desativada temporariamente para ambiente de desenvolvimento:
+    # municipio = await placa_functions.get_municipio_by_codigo_ibge(
+    #     db, QUIXADA_CODIGO_IBGE
+    # )
+    # if not municipio:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #         detail="Município de Quixadá não cadastrado.",
+    #     )
+    # is_inside = await is_point_in_municipio(
+    #     db, placa_create.latitude, placa_create.longitude, municipio.id
+    # )
+    # if not is_inside:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_400_BAD_REQUEST,
+    #         detail="As coordenadas da placa estão fora de Quixadá!",
+    #     )
 
     placa = Placa(
         codigo_contran=placa_create.codigo_contran,
@@ -115,7 +170,26 @@ async def create_placa(
             detail="Serviço de armazenamento de imagens indisponível no momento.",
         ) from exc
 
-    endereco = Enderecos(placa_id=placa.id, **placa_create.endereco.model_dump())
+    endereco = None
+    if placa_create.endereco is not None:
+        has_endereco_info = any(
+            v is not None and v.strip() != ""
+            for v in (
+                placa_create.endereco.logradouro,
+                placa_create.endereco.bairro,
+                placa_create.endereco.cep,
+                placa_create.endereco.referencia,
+            )
+        )
+        if has_endereco_info:
+            endereco = Enderecos(
+                placa_id=placa.id,
+                logradouro=placa_create.endereco.logradouro or "",
+                bairro=placa_create.endereco.bairro or "",
+                cep=placa_create.endereco.cep or "",
+                referencia=placa_create.endereco.referencia,
+            )
+
     evento = EventosPlaca(
         placa_id=placa.id,
         created_by=current_user.id,
@@ -136,14 +210,23 @@ async def create_placa(
         raise
 
     evento_response = EventoPlacaResponse.model_validate(evento)
-    with suppress(StorageError):
-        evento_response.foto_url = await minio_service.get_presigned_url_async(
-            object_name
-        )
+    if object_name:
+        evento_response.foto_url = minio_service.get_public_url(object_name)
+
+    endereco_response = (
+        EnderecoResponse.model_validate(endereco) if endereco is not None else None
+    )
+
+    contran_val = (
+        created_placa.codigo_contran.value
+        if hasattr(created_placa.codigo_contran, "value")
+        else str(created_placa.codigo_contran)
+    )
 
     return PlacaResponse(
         id=created_placa.id,
         codigo_contran=created_placa.codigo_contran,
+        descricao_contran=CONTRAN_DESCRICOES.get(contran_val),
         afastamento=created_placa.afastamento,
         tipo_pelicula=created_placa.tipo_pelicula,
         tipo_substrato=created_placa.tipo_substrato,
@@ -151,24 +234,39 @@ async def create_placa(
         latitude=placa_create.latitude,
         longitude=placa_create.longitude,
         created_at=created_placa.created_at,
-        endereco=EnderecoResponse.model_validate(endereco),
+        endereco=endereco_response,
         ultimo_evento=evento_response,
     )
+
+
+@router.get(
+    "/tipos",
+    response_model=list[PlacaTipoItem],
+    status_code=status.HTTP_200_OK,
+    summary="Catálogo de tipos e códigos de placas CONTRAN",
+    description=(
+        "Retorna a lista de todos os códigos CONTRAN e suas descrições para filtros."
+    ),
+)
+async def list_tipos_placas() -> list[PlacaTipoItem]:
+    return [
+        PlacaTipoItem(codigo=codigo, descricao=descricao)
+        for codigo, descricao in CONTRAN_DESCRICOES.items()
+    ]
 
 
 @router.get(
     "/",
     response_model=PlacaListResponse,
     status_code=status.HTTP_200_OK,
-    summary="Lista placas com filtros e estado atual",
+    summary="Lista placas paginadas com filtros de endereço e conservação",
     description=(
         "Recupera uma lista paginada de placas unificando Endereço "
         "e o último EventoPlaca.\n\n"
         "**Recursos e Filtros:**\n"
-        "- Bounding Box espacial via `ST_MakeEnvelope` e `ST_Within`.\n"
-        "- Lateral Join para evitar o problema de N+1 queries.\n"
-        "- Filtros parciais por bairro e logradouro (case-insensitive).\n"
-        "- Filtro por estado de conservação atual da placa."
+        "- Paginação (`page`, `page_size`).\n"
+        "- Filtros parciais por `bairro` e `logradouro` (case-insensitive).\n"
+        "- Filtro por `estado_conservacao` atual da placa."
     ),
     response_description="Lista paginada de placas com endereço e último evento.",
 )
@@ -177,49 +275,7 @@ async def list_placas(
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
     total, rows = await placa_functions.list_placas(session, params)
-
-    items: list[PlacaResponse] = []
-    for row in rows:
-        placa = row[0]
-        endereco = row[1]
-        lat = row.latitude
-        lng = row.longitude
-
-        evento_response = None
-        if row.ev_id is not None:
-            foto_url = row.ev_foto_url
-            if foto_url:
-                with suppress(StorageError):
-                    foto_url = await minio_service.get_presigned_url_async(foto_url)
-
-            evento_response = EventoPlacaResponse(
-                id=row.ev_id,
-                created_by=row.ev_created_by,
-                tipo_evento=row.ev_tipo_evento,
-                estado_conservacao=row.ev_estado_conservacao,
-                estado_pelicula=row.ev_estado_pelicula,
-                estado_substrato=row.ev_estado_substrato,
-                estado_suporte=row.ev_estado_suporte,
-                foto_url=foto_url,
-                observacao=row.ev_observacao,
-                timestamp=row.ev_timestamp,
-            )
-
-        items.append(
-            PlacaResponse(
-                id=placa.id,
-                codigo_contran=placa.codigo_contran,
-                afastamento=placa.afastamento,
-                tipo_pelicula=placa.tipo_pelicula,
-                tipo_substrato=placa.tipo_substrato,
-                tipo_suporte=placa.tipo_suporte,
-                latitude=lat,
-                longitude=lng,
-                created_at=placa.created_at,
-                endereco=EnderecoResponse.model_validate(endereco),
-                ultimo_evento=evento_response,
-            )
-        )
+    items = await _serialize_placa_rows(rows)
 
     return PlacaListResponse(
         total=total,

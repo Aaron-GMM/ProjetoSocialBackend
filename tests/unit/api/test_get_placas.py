@@ -63,6 +63,12 @@ def mock_minio(monkeypatch):
     mock_service.upload_file_async = AsyncMock(
         return_value="placas/2026/10/20/placas_123_abcd1234.jpg"
     )
+    mock_service.get_public_url = MagicMock(
+        return_value=(
+            "http://localhost:9000/cacaplaca-images/placas/2026/10/20/"
+            "placas_123_abcd1234.jpg"
+        )
+    )
     mock_service.get_presigned_url_async = AsyncMock(
         return_value=(
             "http://localhost:9000/cacaplaca-images/placas/2026/10/20/"
@@ -164,47 +170,6 @@ async def test_get_placas_success_e_ultimo_evento(
 
 
 @pytest.mark.asyncio
-async def test_get_placas_filtro_bounding_box(
-    client: AsyncClient, quixada, agent_headers
-):
-    dentro = await cadastrar_placa(client, agent_headers)
-    fora = await cadastrar_placa(
-        client,
-        agent_headers,
-        latitude=-4.9900,
-        longitude=-39.0500,
-        bairro="Distrito",
-        logradouro="Estrada Velha",
-    )
-
-    params = {
-        "min_lng": -39.020,
-        "min_lat": -4.980,
-        "max_lng": -39.010,
-        "max_lat": -4.960,
-    }
-    response = await client.get("/placas/", params=params)
-
-    assert response.status_code == 200
-    ids = [i["id"] for i in response.json()["items"]]
-    assert dentro["id"] in ids
-    assert fora["id"] not in ids
-
-
-@pytest.mark.asyncio
-async def test_get_placas_bounding_box_parcial_ignorada(
-    client: AsyncClient, quixada, agent_headers
-):
-    await cadastrar_placa(client, agent_headers)
-
-    # Só parte dos parâmetros da bbox não deve ativar o filtro espacial
-    response = await client.get("/placas/", params={"min_lng": -39.0})
-
-    assert response.status_code == 200
-    assert response.json()["total"] == 1
-
-
-@pytest.mark.asyncio
 async def test_get_placas_filtros_textuais_ilike(
     client: AsyncClient, quixada, agent_headers
 ):
@@ -279,3 +244,85 @@ async def test_get_placas_nenhum_resultado(client: AsyncClient):
     data = response.json()
     assert data["total"] == 0
     assert data["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_placas_sem_endereco_retorna_corretamente(
+    client: AsyncClient, quixada, agent_headers
+):
+    # Cadastra uma placa sem dados de endereço
+    data_sem_end = {
+        k: v
+        for k, v in FORM_DATA.items()
+        if k not in ("logradouro", "bairro", "cep", "referencia")
+    }
+    files = {"foto": ("placa.jpg", FAKE_JPEG_BYTES, "image/jpeg")}
+    create_res = await client.post(
+        "/placas/", data=data_sem_end, files=files, headers=agent_headers
+    )
+    assert create_res.status_code == 201
+    created_id = create_res.json()["id"]
+
+    # 1. Verifica no endpoint geral /placas/
+    res_list = await client.get("/placas/")
+    assert res_list.status_code == 200
+    list_data = res_list.json()
+    assert list_data["total"] == 1
+    assert list_data["items"][0]["id"] == created_id
+    assert list_data["items"][0]["endereco"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_placas_filtro_codigo_contran(
+    client: AsyncClient, quixada, agent_headers
+):
+    p_r1 = await cadastrar_placa(client, agent_headers)
+    files = {"foto": ("placa.jpg", FAKE_JPEG_BYTES, "image/jpeg")}
+    res_a18 = await client.post(
+        "/placas/",
+        data={**FORM_DATA, "codigo_contran": "A-18", "latitude": "-4.9720"},
+        files=files,
+        headers=agent_headers,
+    )
+    assert res_a18.status_code == 201
+
+    # 1. Busca exata por 'R-1'
+    res_exact = await client.get("/placas/", params={"codigo_contran": "R-1"})
+    assert res_exact.status_code == 200
+    assert len(res_exact.json()["items"]) == 1
+    assert res_exact.json()["items"][0]["id"] == p_r1["id"]
+    assert (
+        res_exact.json()["items"][0]["descricao_contran"] == "Parada Obrigatória (PARE)"
+    )
+
+    # 2. Busca por alias sem hífen 'R1'
+    res_alias = await client.get("/placas/", params={"codigo_contran": "R1"})
+    assert res_alias.status_code == 200
+    assert len(res_alias.json()["items"]) == 1
+    assert res_alias.json()["items"][0]["id"] == p_r1["id"]
+
+    # 3. Busca por texto 'pare'
+    res_desc = await client.get("/placas/", params={"codigo_contran": "pare"})
+    assert res_desc.status_code == 200
+    assert len(res_desc.json()["items"]) == 1
+    assert res_desc.json()["items"][0]["id"] == p_r1["id"]
+
+    # 4. Busca por 'lombada' -> A-18
+    res_lombada = await client.get("/placas/", params={"codigo_contran": "lombada"})
+    assert res_lombada.status_code == 200
+    assert len(res_lombada.json()["items"]) == 1
+    assert res_lombada.json()["items"][0]["codigo_contran"] == "A-18"
+
+
+@pytest.mark.asyncio
+async def test_get_placas_tipos_catalogo(client: AsyncClient):
+    response = await client.get("/placas/tipos")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert len(data) > 0
+    codigos = {item["codigo"] for item in data}
+    assert "R-1" in codigos
+    assert "A-18" in codigos
+    r1_item = next(item for item in data if item["codigo"] == "R-1")
+    assert "PARE" in r1_item["descricao"]

@@ -73,6 +73,113 @@ class CodigoContran(str, Enum):
     OUTRO = "OUTRO"
 
 
+CONTRAN_DESCRICOES: dict[str, str] = {
+    "R-1": "Parada Obrigatória (PARE)",
+    "R-2": "Dê a Preferência",
+    "R-3": "Sentido Proibido",
+    "R-4a": "Proibido Virar à Esquerda",
+    "R-4b": "Proibido Virar à Direita",
+    "R-5a": "Proibido Retornar à Esquerda",
+    "R-5b": "Proibido Retornar à Direita",
+    "R-6a": "Proibido Estacionar",
+    "R-6b": "Estacionamento Regulamentado",
+    "R-6c": "Proibido Parar e Estacionar",
+    "R-7": "Proibido Ultrapassar",
+    "R-8a": "Proibido Mudar de Faixa da Esquerda para Direita",
+    "R-8b": "Proibido Mudar de Faixa da Direita para Esquerda",
+    "R-9": "Proibido Trânsito de Caminhões",
+    "R-10": "Proibido Trânsito de Veículos Automotores",
+    "R-11": "Proibido Trânsito de Veículos de Tração Animal",
+    "R-12": "Proibido Trânsito de Bicicletas",
+    "R-13": "Proibido Trânsito de Tratores e Máquinas de Obras",
+    "R-14": "Peso Bruto Total Máximo Permitido",
+    "R-15": "Altura Máxima Permitida",
+    "R-16": "Largura Máxima Permitida",
+    "R-17": "Peso Máximo Permitido por Eixo",
+    "R-18": "Comprimento Máximo Permitido",
+    "R-19": "Velocidade Máxima Permitida",
+    "R-20": "Proibido Acionar Buzina ou Sinal Sonoro",
+    "R-21": "Alfândega",
+    "R-22": "Uso Obrigatório de Corrente",
+    "R-23": "Conserve-se à Direita",
+    "R-24a": "Sentido de Circulação da Via/Pista",
+    "R-24b": "Passagem Obrigatória",
+    "R-25a": "Vire à Esquerda",
+    "R-25b": "Vire à Direita",
+    "R-25c": "Siga em Frente ou à Esquerda",
+    "R-25d": "Siga em Frente ou à Direita",
+    "R-26": "Siga em Frente",
+    "R-27": "Ônibus, Caminhões e Veículos de Grande Porte Mantenham-se à Direita",
+    "R-28": "Duplo Sentido de Circulação",
+    "R-29": "Proibido Trânsito de Pedestres",
+    "R-30": "Pedestre, Ande pela Esquerda",
+    "R-31": "Pedestre, Ande pela Direita",
+    "R-32": "Circulação Exclusiva de Ônibus",
+    "R-33": "Sentido de Circulação na Rotatória",
+    "R-34": "Circulação Exclusiva de Bicicletas",
+    "R-35a": "Ciclista, Transite à Esquerda",
+    "R-35b": "Ciclista, Transite à Direita",
+    "R-36a": "Ciclistas à Esquerda, Pedestres à Direita",
+    "R-36b": "Pedestres à Esquerda, Ciclistas à Direita",
+    "R-37": "Proibido Trânsito de Motocicletas, Motonetas e Ciclomotores",
+    "R-38": "Proibido Trânsito de Ônibus",
+    "R-39": "Circulação Exclusiva de Caminhão",
+    "R-40": "Trânsito Proibido a Carros de Mão",
+    "A-1a": "Curva Acentuada à Esquerda",
+    "A-1b": "Curva Acentuada à Direita",
+    "A-2a": "Curva à Esquerda",
+    "A-2b": "Curva à Direita",
+    "A-14": "Semáforo à Frente",
+    "A-18": "Saliência ou Lombada",
+    "A-24": "Obras",
+    "A-32a": "Trânsito de Pedestres",
+    "A-32b": "Passagem Sinalizada de Pedestres",
+    "A-33a": "Área Escolar",
+    "A-33b": "Passagem Sinalizada de Escolares",
+    "OUTRO": "Outro",
+}
+
+
+def resolve_codigo_contran_filter(termo: str) -> list[str]:
+    """Mapeia termos, aliases ou descrições para os códigos CONTRAN correspondentes."""
+    import unicodedata
+
+    termo_limpo = termo.strip().upper()
+    if not termo_limpo:
+        return []
+
+    # 1. Checagem direta pelo valor do Enum (ex: 'R-1', 'A-18')
+    for code in CodigoContran:
+        if code.value.upper() == termo_limpo:
+            return [code.value]
+
+    # 2. Checagem ignorando hífen (ex: 'R1' -> 'R-1', 'A18' -> 'A-18')
+    termo_sem_hifen = termo_limpo.replace("-", "")
+    for code in CodigoContran:
+        if code.value.upper().replace("-", "") == termo_sem_hifen:
+            return [code.value]
+
+    # 3. Busca textual sem acentos na descrição ou no código
+    def strip_accents(text: str) -> str:
+        return "".join(
+            c
+            for c in unicodedata.normalize("NFD", text)
+            if unicodedata.category(c) != "Mn"
+        ).upper()
+
+    termo_norm = strip_accents(termo_limpo)
+    matched: list[str] = []
+    for code_val, desc in CONTRAN_DESCRICOES.items():
+        desc_norm = strip_accents(desc)
+        if termo_norm in desc_norm or termo_norm in strip_accents(code_val):
+            matched.append(code_val)
+
+    if matched:
+        return matched
+
+    return [termo.strip()]
+
+
 class TipoPelicula(str, Enum):
     """Tipos de película retrorrefletiva segundo ABNT NBR 14644."""
 
