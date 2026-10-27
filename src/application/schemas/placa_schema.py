@@ -18,18 +18,18 @@ from src.domain.enums.placa_enums import (
 class EnderecoCreate(BaseModel):
     """Schema do endereço enviado no cadastro de placa."""
 
-    logradouro: str = Field(
-        ..., min_length=1, description="Logradouro", examples=["Rua Basílio Pinto"]
+    logradouro: str | None = Field(
+        None, description="Logradouro", examples=["Rua Basílio Pinto"]
     )
-    bairro: str = Field(..., min_length=1, description="Bairro", examples=["Centro"])
-    cep: str = Field(..., min_length=1, description="CEP", examples=["63900-000"])
+    bairro: str | None = Field(None, description="Bairro", examples=["Centro"])
+    cep: str | None = Field(None, description="CEP", examples=["63900-000"])
     referencia: str | None = Field(
         None, description="Ponto de referência", examples=["Em frente à praça"]
     )
 
 
 class PlacaCreate(BaseModel):
-    """Schema de criação de placa (Placa + Endereço + Evento inicial)."""
+    """Schema de criação de placa (Placa + Endereço opcional + Evento inicial)."""
 
     codigo_contran: CodigoContran = Field(
         ..., description="Código Contran da placa", examples=["R-1"]
@@ -52,7 +52,9 @@ class PlacaCreate(BaseModel):
     longitude: float = Field(
         ..., ge=-180, le=180, description="Longitude (WGS 84)", examples=[-39.0154]
     )
-    endereco: EnderecoCreate
+    endereco: EnderecoCreate | None = Field(
+        None, description="Endereço da placa (opcional)"
+    )
     estado_conservacao: EstadoConservacao = Field(
         ..., description="Estado geral de conservação", examples=["BOM"]
     )
@@ -81,12 +83,12 @@ class PlacaCreate(BaseModel):
         longitude: Annotated[
             float, Form(ge=-180, le=180, description="Longitude (WGS 84)")
         ],
-        logradouro: Annotated[str, Form(min_length=1, description="Logradouro")],
-        bairro: Annotated[str, Form(min_length=1, description="Bairro")],
-        cep: Annotated[str, Form(min_length=1, description="CEP")],
         estado_conservacao: Annotated[
             EstadoConservacao, Form(description="Estado geral de conservação")
         ],
+        logradouro: Annotated[str | None, Form(description="Logradouro")] = None,
+        bairro: Annotated[str | None, Form(description="Bairro")] = None,
+        cep: Annotated[str | None, Form(description="CEP")] = None,
         referencia: Annotated[
             str | None, Form(description="Ponto de referência")
         ] = None,
@@ -119,6 +121,24 @@ class PlacaCreate(BaseModel):
         ] = None,
     ) -> "PlacaCreate":
         """Constrói o schema PlacaCreate a partir de campos multipart/form-data."""
+        has_endereco = any(
+            v is not None and v.strip() != ""
+            for v in (logradouro, bairro, cep, referencia)
+        )
+
+        def clean_str(val: str | None) -> str | None:
+            return val.strip() if val and val.strip() else None
+
+        endereco_obj = (
+            EnderecoCreate(
+                logradouro=clean_str(logradouro),
+                bairro=clean_str(bairro),
+                cep=clean_str(cep),
+                referencia=clean_str(referencia),
+            )
+            if has_endereco
+            else None
+        )
         return cls(
             codigo_contran=codigo_contran,
             afastamento=afastamento,
@@ -127,12 +147,7 @@ class PlacaCreate(BaseModel):
             tipo_suporte=tipo_suporte,
             latitude=latitude,
             longitude=longitude,
-            endereco=EnderecoCreate(
-                logradouro=logradouro,
-                bairro=bairro,
-                cep=cep,
-                referencia=referencia,
-            ),
+            endereco=endereco_obj,
             estado_conservacao=estado_conservacao,
             estado_pelicula=estado_pelicula,
             estado_substrato=estado_substrato,
@@ -145,10 +160,10 @@ class EnderecoResponse(BaseModel):
     """Schema de resposta do endereço da placa."""
 
     id: UUID
-    logradouro: str
-    bairro: str
-    cep: str
-    referencia: str | None
+    logradouro: str | None = None
+    bairro: str | None = None
+    cep: str | None = None
+    referencia: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -175,6 +190,11 @@ class PlacaResponse(BaseModel):
 
     id: UUID
     codigo_contran: CodigoContran
+    descricao_contran: str | None = Field(
+        None,
+        description="Descrição oficial CONTRAN da placa",
+        examples=["Parada Obrigatória (PARE)"],
+    )
     afastamento: float | None
     tipo_pelicula: TipoPelicula | None
     tipo_substrato: TipoSubstrato | None
@@ -182,27 +202,34 @@ class PlacaResponse(BaseModel):
     latitude: float
     longitude: float
     created_at: datetime
-    endereco: EnderecoResponse
+    endereco: EnderecoResponse | None = None
     ultimo_evento: EventoPlacaResponse | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
 
+class PlacaTipoItem(BaseModel):
+    """Item descritivo do catálogo de tipos/códigos de placas CONTRAN."""
+
+    codigo: str = Field(..., description="Código oficial CONTRAN", examples=["R-1"])
+    descricao: str = Field(
+        ...,
+        description="Significado oficial da placa",
+        examples=["Parada Obrigatória (PARE)"],
+    )
+
+
 class PlacaQueryParams(BaseModel):
-    """Parâmetros de consulta e filtros para listagem de placas."""
+    """Parâmetros de consulta e filtros de negócio para listagem de placas."""
 
     page: int = Field(default=1, ge=1, description="Número da página")
     page_size: int = Field(default=20, ge=1, le=100, description="Itens por página")
 
-    min_lng: float | None = Field(
-        None, ge=-180, le=180, description="Longitude mínima"
+    codigo_contran: str | None = Field(
+        None,
+        description="Filtro por código ou tipo da placa (ex: 'R-1', 'R1', 'PARE')",
+        examples=["R-1", "PARE"],
     )
-    min_lat: float | None = Field(None, ge=-90, le=90, description="Latitude mínima")
-    max_lng: float | None = Field(
-        None, ge=-180, le=180, description="Longitude máxima"
-    )
-    max_lat: float | None = Field(None, ge=-90, le=90, description="Latitude máxima")
-
     bairro: str | None = Field(None, description="Filtro parcial por bairro")
     logradouro: str | None = Field(None, description="Filtro parcial por logradouro")
     estado_conservacao: EstadoConservacao | None = Field(
