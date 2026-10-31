@@ -1,5 +1,6 @@
 from contextlib import suppress
 from typing import Annotated, Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from geoalchemy2 import WKTElement
@@ -14,6 +15,8 @@ from src.application.schemas.placa_schema import (
     PlacaQueryParams,
     PlacaResponse,
     PlacaTipoItem,
+    PlacaUpdate,
+    VistoriaCreate,
 )
 from src.domain.enums.placa_enums import CONTRAN_DESCRICOES, TipoEvento
 from src.domain.models.endereco import Enderecos
@@ -86,6 +89,50 @@ async def _serialize_placa_rows(rows: list[Any]) -> list[PlacaResponse]:
     return items
 
 
+async def _read_image(foto: UploadFile) -> bytes:
+    """Valida o tipo da imagem enviada e retorna seu conteúdo."""
+    if foto.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Formato de imagem inválido. Envie JPEG, PNG ou WEBP.",
+        )
+
+    file_bytes = await foto.read()
+    if not file_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="O arquivo de imagem enviado está vazio.",
+        )
+    return file_bytes
+
+
+async def _upload_image(foto: UploadFile, file_bytes: bytes, placa_id: UUID) -> str:
+    """Envia a imagem ao MinIO e retorna o object_name salvo."""
+    try:
+        await minio_service.ensure_bucket_exists_async()
+        return await minio_service.upload_file_async(
+            file_data=file_bytes,
+            filename=foto.filename or "placa.jpg",
+            content_type=foto.content_type,
+            context="placas",
+            entity_id=str(placa_id),
+        )
+    except StorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Serviço de armazenamento de imagens indisponível no momento.",
+        ) from exc
+
+
+async def _get_placa_row_or_404(db: AsyncSession, placa_id: UUID) -> Any:
+    row = await placa_functions.get_placa_by_id(db, placa_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Placa não encontrada."
+        )
+    return row
+
+
 @router.post(
     "/",
     response_model=PlacaResponse,
@@ -113,18 +160,7 @@ async def create_placa(
     db: Annotated[AsyncSession, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
-    if foto.content_type not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Formato de imagem inválido. Envie JPEG, PNG ou WEBP.",
-        )
-
-    file_bytes = await foto.read()
-    if not file_bytes:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="O arquivo de imagem enviado está vazio.",
-        )
+    file_bytes = await _read_image(foto)
 
     # Validação de Quixadá desativada temporariamente para ambiente de desenvolvimento:
     # municipio = await placa_functions.get_municipio_by_codigo_ibge(
@@ -155,20 +191,7 @@ async def create_placa(
         ),
     )
 
-    try:
-        await minio_service.ensure_bucket_exists_async()
-        object_name = await minio_service.upload_file_async(
-            file_data=file_bytes,
-            filename=foto.filename or "placa.jpg",
-            content_type=foto.content_type,
-            context="placas",
-            entity_id=str(placa.id),
-        )
-    except StorageError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Serviço de armazenamento de imagens indisponível no momento.",
-        ) from exc
+    object_name = await _upload_image(foto, file_bytes, placa.id)
 
     endereco = None
     if placa_create.endereco is not None:
@@ -283,3 +306,125 @@ async def list_placas(
         page_size=params.page_size,
         items=items,
     )
+
+
+@router.post(
+    "/{placa_id}/vistoria",
+    response_model=EventoPlacaResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registra uma nova vistoria em uma placa existente",
+    description=(
+        "Cadastra um novo relatório de vistoria via `multipart/form-data`.\n\n"
+        "**Regras de Negócio:**\n"
+        "- Requer usuário autenticado (Agente ou Administrador).\n"
+        "- A tabela `placas` não é alterada: um novo evento `VISTORIA` é inserido "
+        "em `eventos_placa` (Append-Only).\n"
+        "- A foto é enviada ao MinIO antes do commit e removida caso o banco falhe."
+    ),
+    response_description="Evento de vistoria criado com a URL da foto.",
+)
+async def create_vistoria(
+    placa_id: UUID,
+    vistoria: Annotated[VistoriaCreate, Depends(VistoriaCreate.as_form)],
+    foto: Annotated[
+        UploadFile,
+        File(..., description="Foto da placa no momento da vistoria"),
+    ],
+    db: Annotated[AsyncSession, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    await _get_placa_row_or_404(db, placa_id)
+    file_bytes = await _read_image(foto)
+    object_name = await _upload_image(foto, file_bytes, placa_id)
+
+    evento = EventosPlaca(
+        placa_id=placa_id,
+        created_by=current_user.id,
+        tipo_evento=TipoEvento.VISTORIA,
+        foto_url=object_name,
+        **vistoria.model_dump(),
+    )
+
+    try:
+        evento = await placa_functions.create_evento(db, evento)
+    except Exception:
+        with suppress(StorageError):
+            await minio_service.delete_file_async(object_name)
+        raise
+
+    evento_response = EventoPlacaResponse.model_validate(evento)
+    evento_response.foto_url = minio_service.get_public_url(object_name)
+    return evento_response
+
+
+@router.patch(
+    "/{placa_id}",
+    response_model=PlacaResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Edita os dados cadastrais de uma placa",
+    description=(
+        "Corrige atributos fixos da placa e do endereço via `multipart/form-data`. "
+        "Todos os campos são opcionais e não geram novos eventos.\n\n"
+        "**Regras de Negócio:**\n"
+        "- Requer usuário autenticado (Agente ou Administrador).\n"
+        "- Se `foto` for enviada, substitui a foto do evento mais recente e "
+        "remove o arquivo antigo do MinIO."
+    ),
+    response_description="Placa atualizada com endereço e último evento.",
+)
+async def update_placa(
+    placa_id: UUID,
+    placa_update: Annotated[PlacaUpdate, Depends(PlacaUpdate.as_form)],
+    db: Annotated[AsyncSession, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    foto: Annotated[
+        UploadFile | None,
+        File(description="Nova foto da placa (opcional)"),
+    ] = None,
+):
+    row = await _get_placa_row_or_404(db, placa_id)
+    placa, endereco = row[0], row[1]
+
+    placa.sqlmodel_update(
+        placa_update.model_dump(exclude={"endereco"}, exclude_none=True)
+    )
+    to_save: list[Any] = [placa]
+
+    if placa_update.endereco is not None:
+        endereco_data = placa_update.endereco.model_dump(exclude_none=True)
+        if endereco is None:
+            endereco = Enderecos(
+                placa_id=placa.id,
+                logradouro=endereco_data.get("logradouro", ""),
+                bairro=endereco_data.get("bairro", ""),
+                cep=endereco_data.get("cep", ""),
+                referencia=endereco_data.get("referencia"),
+            )
+        else:
+            endereco.sqlmodel_update(endereco_data)
+        to_save.append(endereco)
+
+    new_object_name = None
+    old_object_name = None
+    if foto is not None:
+        file_bytes = await _read_image(foto)
+        evento = await db.get(EventosPlaca, row.ev_id)
+        new_object_name = await _upload_image(foto, file_bytes, placa_id)
+        old_object_name = evento.foto_url
+        evento.foto_url = new_object_name
+        to_save.append(evento)
+
+    try:
+        await placa_functions.save_placa_changes(db, to_save)
+    except Exception:
+        if new_object_name:
+            with suppress(StorageError):
+                await minio_service.delete_file_async(new_object_name)
+        raise
+
+    if old_object_name:
+        with suppress(StorageError):
+            await minio_service.delete_file_async(old_object_name)
+
+    updated_row = await placa_functions.get_placa_by_id(db, placa_id)
+    return (await _serialize_placa_rows([updated_row]))[0]

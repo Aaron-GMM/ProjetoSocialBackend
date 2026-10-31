@@ -156,6 +156,105 @@ class PlacaCreate(BaseModel):
         )
 
 
+class VistoriaCreate(BaseModel):
+    """Schema de criação de um relatório de vistoria em uma placa existente."""
+
+    estado_conservacao: EstadoConservacao
+    estado_pelicula: EstadoConservacao | None = None
+    estado_substrato: EstadoConservacao | None = None
+    estado_suporte: EstadoConservacao | None = None
+    observacao: str | None = None
+
+    @classmethod
+    def as_form(
+        cls,
+        estado_conservacao: Annotated[
+            EstadoConservacao, Form(description="Estado geral de conservação")
+        ],
+        estado_pelicula: Annotated[
+            EstadoConservacao | None,
+            Form(description="Estado de conservação da película"),
+        ] = None,
+        estado_substrato: Annotated[
+            EstadoConservacao | None,
+            Form(description="Estado de conservação do substrato"),
+        ] = None,
+        estado_suporte: Annotated[
+            EstadoConservacao | None,
+            Form(description="Estado de conservação do suporte"),
+        ] = None,
+        observacao: Annotated[
+            str | None, Form(description="Observação do agente")
+        ] = None,
+    ) -> "VistoriaCreate":
+        """Constrói o schema VistoriaCreate a partir de campos multipart/form-data."""
+        return cls(
+            estado_conservacao=estado_conservacao,
+            estado_pelicula=estado_pelicula,
+            estado_substrato=estado_substrato,
+            estado_suporte=estado_suporte,
+            observacao=observacao.strip()
+            if observacao and observacao.strip()
+            else None,
+        )
+
+
+class PlacaUpdate(BaseModel):
+    """Schema de edição cadastral da placa (todos os campos opcionais)."""
+
+    codigo_contran: CodigoContran | None = None
+    afastamento: float | None = Field(None, ge=0)
+    tipo_pelicula: TipoPelicula | None = None
+    tipo_substrato: TipoSubstrato | None = None
+    tipo_suporte: TipoSuporte | None = None
+    endereco: EnderecoCreate | None = None
+
+    @classmethod
+    def as_form(
+        cls,
+        codigo_contran: Annotated[
+            CodigoContran | None, Form(description="Código Contran da placa")
+        ] = None,
+        afastamento: Annotated[
+            float | None, Form(ge=0, description="Distância do bordo em metros")
+        ] = None,
+        tipo_pelicula: Annotated[
+            TipoPelicula | None, Form(description="Tipo de película")
+        ] = None,
+        tipo_substrato: Annotated[
+            TipoSubstrato | None, Form(description="Tipo de substrato")
+        ] = None,
+        tipo_suporte: Annotated[
+            TipoSuporte | None, Form(description="Tipo de suporte")
+        ] = None,
+        logradouro: Annotated[str | None, Form(description="Logradouro")] = None,
+        bairro: Annotated[str | None, Form(description="Bairro")] = None,
+        cep: Annotated[str | None, Form(description="CEP")] = None,
+        referencia: Annotated[
+            str | None, Form(description="Ponto de referência")
+        ] = None,
+    ) -> "PlacaUpdate":
+        """Constrói o schema PlacaUpdate a partir de campos multipart/form-data."""
+
+        def clean_str(val: str | None) -> str | None:
+            return val.strip() if val and val.strip() else None
+
+        endereco = EnderecoCreate(
+            logradouro=clean_str(logradouro),
+            bairro=clean_str(bairro),
+            cep=clean_str(cep),
+            referencia=clean_str(referencia),
+        )
+        return cls(
+            codigo_contran=codigo_contran,
+            afastamento=afastamento,
+            tipo_pelicula=tipo_pelicula,
+            tipo_substrato=tipo_substrato,
+            tipo_suporte=tipo_suporte,
+            endereco=endereco if endereco.model_dump(exclude_none=True) else None,
+        )
+
+
 class EnderecoResponse(BaseModel):
     """Schema de resposta do endereço da placa."""
 
