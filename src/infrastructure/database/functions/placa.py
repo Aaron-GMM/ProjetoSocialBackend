@@ -1,4 +1,5 @@
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import func, true
 from sqlmodel import select
@@ -43,6 +44,28 @@ async def create_placa(
             await db.refresh(instance)
 
         return placa
+    except Exception:
+        await db.rollback()
+        raise
+
+
+async def create_evento(db: AsyncSession, evento: EventosPlaca) -> EventosPlaca:
+    """Insere um novo evento (Append-Only) na linha do tempo da placa."""
+    try:
+        db.add(evento)
+        await db.commit()
+        await db.refresh(evento)
+        return evento
+    except Exception:
+        await db.rollback()
+        raise
+
+
+async def save_placa_changes(db: AsyncSession, instances: list[Any]) -> None:
+    """Persiste as alterações cadastrais da placa atomicamente."""
+    try:
+        db.add_all(instances)
+        await db.commit()
     except Exception:
         await db.rollback()
         raise
@@ -130,3 +153,10 @@ async def list_placas(
         )
 
     return await _paginate_placa_query(db, stmt, params.page, params.page_size)
+
+
+async def get_placa_by_id(db: AsyncSession, placa_id: UUID) -> Any | None:
+    """Busca uma placa com endereço e último evento pelo ID."""
+    stmt, _ = _build_base_placa_query()
+    result = await db.exec(stmt.where(Placa.id == placa_id))
+    return result.first()
