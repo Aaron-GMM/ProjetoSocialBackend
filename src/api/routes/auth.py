@@ -1,18 +1,28 @@
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlmodel import delete, select, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.api.deps import get_current_user_from_reset_token
 from src.application.schemas.auth_schema import (
     ForgotPasswordRequest,
     ForgotPasswordResponse,
+    RefreshTokenRequest,
     ResetPasswordRequest,
     TokenResponse,
 )
 from src.core.config import settings
-from src.core.security import create_access_token, create_reset_token, verify_password
+from src.core.security import (
+    create_access_token,
+    create_reset_token,
+    generate_refresh_token_string,
+    hash_token,
+    verify_password,
+)
+from src.domain.models.refresh_token import RefreshToken
 from src.domain.models.user import User
 from src.infrastructure.database.connection import get_session
 from src.infrastructure.database.functions.user import (
@@ -27,18 +37,7 @@ router = APIRouter(prefix="/auth", tags=["Autenticação"])
 @router.post(
     "/login",
     response_model=TokenResponse,
-    summary="Realiza login e emite token JWT",
-    description=(
-        "Endpoint padrão do OAuth2 para autenticação de usuários.\n\n"
-        "**Regras de Negócio:**\n"
-        "- O frontend deve enviar `username` (email) e `password` no formato "
-        "`application/x-www-form-urlencoded`.\n"
-        "- Se as credenciais forem válidas, a API emite um `access_token` JWT.\n"
-        "- O token contém `token_type=access`, a `role` e o `sub` (ID do usuário) "
-        "e deve ser usado nas "
-        "requisições subsequentes via cabeçalho `Authorization: Bearer <token>`."
-    ),
-    response_description="Objeto contendo o Token JWT de Acesso e seu tipo.",
+    summary="Realiza login e emite access e refresh token",
 )
 async def login(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
@@ -51,7 +50,7 @@ async def login(
     )
 
     user = await get_user_by_email_case_insensitive(db=db, email=form_data.username)
-    if not user:
+    if not user or not user.is_active:
         raise unauthorized_exception
 
     password_hash = getattr(user, "password_hash", None) or getattr(
@@ -60,13 +59,144 @@ async def login(
     if not password_hash or not verify_password(form_data.password, password_hash):
         raise unauthorized_exception
 
-    token_payload = {
-        "sub": str(user.id),
-        "role": user.role.value,
-    }
-    access_token = create_access_token(data=token_payload)
+    access_token = create_access_token(
+        data={"sub": str(user.id), "role": user.role.value}
+    )
 
-    return TokenResponse(access_token=access_token, token_type="bearer")
+    raw_refresh_token = generate_refresh_token_string()
+    expires_at = datetime.now(timezone.utc) + timedelta(
+        days=settings.REFRESH_TOKEN_EXPIRE_DAYS
+    )
+
+    # Expurga tokens expirados do usuário para evitar inchaço da tabela
+    await db.exec(
+        delete(RefreshToken).where(
+            RefreshToken.user_id == user.id,
+            RefreshToken.expires_at < datetime.now(timezone.utc),
+        )
+    )
+
+    db_refresh_token = RefreshToken(
+        token_hash=hash_token(raw_refresh_token),
+        user_id=user.id,
+        expires_at=expires_at,
+        revoked=False,
+    )
+    db.add(db_refresh_token)
+    await db.commit()
+
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=raw_refresh_token,
+        token_type="bearer",
+    )
+
+
+@router.post(
+    "/refresh",
+    response_model=TokenResponse,
+    summary="Renova tokens via refresh token rotation",
+)
+async def refresh_tokens(
+    request: RefreshTokenRequest,
+    db: Annotated[AsyncSession, Depends(get_session)],
+) -> TokenResponse:
+    unauthorized_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Refresh token inválido, expirado ou revogado.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    token_h = hash_token(request.refresh_token)
+
+    statement = (
+        select(RefreshToken)
+        .where(RefreshToken.token_hash == token_h)
+        .with_for_update()
+    )
+    result = await db.exec(statement)
+    token_record = result.first()
+
+    if not token_record:
+        raise unauthorized_exception
+
+    now = datetime.now(timezone.utc)
+
+    token_expires = (
+        token_record.expires_at.replace(tzinfo=timezone.utc)
+        if token_record.expires_at.tzinfo is None
+        else token_record.expires_at
+    )
+
+    if token_record.revoked:
+        # Reuso de token revogado detectado (possível roubo/vazamento de credencial)
+        # RFC 6749 / OAuth 2.0 Security BCP: revoga todas as sessões ativas do usuário
+        await db.exec(
+            update(RefreshToken)
+            .where(RefreshToken.user_id == token_record.user_id)
+            .values(revoked=True)
+        )
+        await db.commit()
+        raise unauthorized_exception
+
+    if token_expires < now:
+        raise unauthorized_exception
+
+    user = await db.get(User, token_record.user_id)
+    if not user or not user.is_active:
+        raise unauthorized_exception
+
+    # Expurga tokens expirados do usuário
+    await db.exec(
+        delete(RefreshToken).where(
+            RefreshToken.user_id == user.id,
+            RefreshToken.expires_at < now,
+        )
+    )
+
+    token_record.revoked = True
+    db.add(token_record)
+
+    new_access_token = create_access_token(
+        data={"sub": str(user.id), "role": user.role.value}
+    )
+    new_raw_refresh = generate_refresh_token_string()
+    new_expires_at = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    new_db_token = RefreshToken(
+        token_hash=hash_token(new_raw_refresh),
+        user_id=user.id,
+        expires_at=new_expires_at,
+        revoked=False,
+    )
+    db.add(new_db_token)
+    await db.commit()
+
+    return TokenResponse(
+        access_token=new_access_token,
+        refresh_token=new_raw_refresh,
+        token_type="bearer",
+    )
+
+
+@router.post(
+    "/logout",
+    summary="Revoga o refresh token e encerra a sessão",
+)
+async def logout(
+    request: RefreshTokenRequest,
+    db: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, str]:
+    token_h = hash_token(request.refresh_token)
+    statement = select(RefreshToken).where(RefreshToken.token_hash == token_h)
+    result = await db.exec(statement)
+    token_record = result.first()
+
+    if token_record and not token_record.revoked:
+        token_record.revoked = True
+        db.add(token_record)
+        await db.commit()
+
+    return {"message": "Sessão encerrada com sucesso."}
 
 
 @router.post(
@@ -134,4 +264,10 @@ async def reset_password(
         user=current_user,
         db=db,
     )
+    await db.exec(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == current_user.id)
+        .values(revoked=True)
+    )
+    await db.commit()
     return {"message": "Senha redefinida com sucesso."}

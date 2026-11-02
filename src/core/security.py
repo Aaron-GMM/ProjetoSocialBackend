@@ -1,3 +1,4 @@
+import hashlib
 import secrets
 import string
 from datetime import datetime, timedelta, timezone
@@ -12,6 +13,7 @@ SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 RESET_TOKEN_EXPIRE_MINUTES = settings.RESET_TOKEN_EXPIRE_MINUTES
+REFRESH_TOKEN_EXPIRE_DAYS = getattr(settings, "REFRESH_TOKEN_EXPIRE_DAYS", 30)
 
 ACCESS_TOKEN_TYPE = "access"
 PASSWORD_RESET_TOKEN_TYPE = "password_reset"
@@ -107,3 +109,13 @@ def validate_reset_token(token: str) -> int | None:
         return int(user_id)
     except (JWTError, TypeError, ValueError):
         return None
+
+
+def generate_refresh_token_string() -> str:
+    """Gera uma string aleatória criptograficamente segura para o refresh token."""
+    return secrets.token_urlsafe(64)
+
+
+def hash_token(token: str) -> str:
+    """Gera o hash SHA-256 de um token para persistência segura no banco."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()

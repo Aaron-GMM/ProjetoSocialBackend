@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     RESET_TOKEN_EXPIRE_MINUTES: int
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
     # Frontend (usado para montar links enviados por e-mail e regras de CORS)
     FRONTEND_URL: str

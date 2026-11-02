@@ -12,9 +12,14 @@ class TokenResponse(BaseModel):
         ),
         examples=["eyJhbGciOiJIUzI1NiIsInR..."],
     )
+    refresh_token: str
     token_type: str = Field(
         "bearer", description="Tipo do token (geralmente bearer)", examples=["bearer"]
     )
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
 
 
 class ForgotPasswordRequest(BaseModel):

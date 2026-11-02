@@ -25,11 +25,21 @@ def test_login_sucesso():
     fake_user.id = 1
     fake_user.role = Role.ADMINISTRADOR
     fake_user.password_hash = get_password_hash("senha_valida")
+    fake_user.is_active = True
 
-    with patch(
-        "src.api.routes.auth.get_user_by_email_case_insensitive",
-        new_callable=AsyncMock,
-        return_value=fake_user,
+    with (
+        patch(
+            "src.api.routes.auth.get_user_by_email_case_insensitive",
+            new_callable=AsyncMock,
+            return_value=fake_user,
+        ),
+        patch(
+            "sqlmodel.ext.asyncio.session.AsyncSession.commit", new_callable=AsyncMock
+        ),
+        patch("sqlmodel.ext.asyncio.session.AsyncSession.add", return_value=None),
+        patch(
+            "sqlmodel.ext.asyncio.session.AsyncSession.exec", new_callable=AsyncMock
+        ),
     ):
         response = client.post(
             "/auth/login",
@@ -39,6 +49,7 @@ def test_login_sucesso():
         assert response.status_code == 200
         body = response.json()
         assert "access_token" in body
+        assert "refresh_token" in body
         assert body["token_type"] == "bearer"
 
         payload = jwt.decode(body["access_token"], SECRET_KEY, algorithms=[ALGORITHM])
@@ -205,6 +216,8 @@ def test_reset_password_com_token_valido_atualiza_senha():
 
     mock_db = MagicMock()
     mock_db.get = AsyncMock(return_value=fake_user)
+    mock_db.exec = AsyncMock()
+    mock_db.commit = AsyncMock()
     app.dependency_overrides[get_session] = lambda: mock_db
 
     try:
@@ -226,6 +239,8 @@ def test_reset_password_com_token_valido_atualiza_senha():
             user=fake_user,
             db=mock_db,
         )
+        mock_db.exec.assert_awaited_once()
+        mock_db.commit.assert_awaited_once()
     finally:
         app.dependency_overrides.clear()
 
