@@ -223,4 +223,10 @@ async def reset_password(
         user=current_user,
         db=db,
     )
+    await db.exec(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == current_user.id)
+        .values(revoked=True)
+    )
+    await db.commit()
     return {"message": "Senha redefinida com sucesso."}

@@ -5,8 +5,11 @@ import pytest
 from fastapi import HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 
-from src.api.routes.auth import login, refresh_tokens
-from src.application.schemas.auth_schema import RefreshTokenRequest
+from src.api.routes.auth import login, refresh_tokens, reset_password
+from src.application.schemas.auth_schema import (
+    RefreshTokenRequest,
+    ResetPasswordRequest,
+)
 from src.core.security import generate_refresh_token_string, hash_token
 from src.domain.enums.role import Role
 from src.domain.models.refresh_token import RefreshToken
@@ -343,3 +346,38 @@ async def test_unit_refresh_user_inactive():
         await refresh_tokens(request=request, db=mock_db)
 
     assert exc_info.value.status_code == 401
+
+
+# ==============================================================================
+# 4. Testes Unitários: POST /auth/reset-password e Revogação de Sessões
+# ==============================================================================
+
+
+@pytest.mark.asyncio
+async def test_unit_reset_password_revokes_all_active_refresh_tokens():
+    mock_db = AsyncMock()
+    mock_user = User(
+        id=7,
+        nome="Agente Reset",
+        email="reset@teste.com",
+        password_hash="old_hash",
+        role=Role.AGENTE,
+        is_active=True,
+    )
+
+    with patch(
+        "src.api.routes.auth.change_user_password", new_callable=AsyncMock
+    ) as mock_change_pwd:
+        request = ResetPasswordRequest(new_password="NovaSenhaSegura123")
+        response = await reset_password(
+            request=request, current_user=mock_user, db=mock_db
+        )
+
+        assert response == {"message": "Senha redefinida com sucesso."}
+        mock_change_pwd.assert_awaited_once_with(
+            new_password="NovaSenhaSegura123",
+            user=mock_user,
+            db=mock_db,
+        )
+        mock_db.exec.assert_awaited_once()
+        mock_db.commit.assert_awaited_once()

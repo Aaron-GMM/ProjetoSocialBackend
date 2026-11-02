@@ -213,6 +213,8 @@ def test_reset_password_com_token_valido_atualiza_senha():
 
     mock_db = MagicMock()
     mock_db.get = AsyncMock(return_value=fake_user)
+    mock_db.exec = AsyncMock()
+    mock_db.commit = AsyncMock()
     app.dependency_overrides[get_session] = lambda: mock_db
 
     try:
@@ -234,6 +236,8 @@ def test_reset_password_com_token_valido_atualiza_senha():
             user=fake_user,
             db=mock_db,
         )
+        mock_db.exec.assert_awaited_once()
+        mock_db.commit.assert_awaited_once()
     finally:
         app.dependency_overrides.clear()
 
