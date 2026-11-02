@@ -89,6 +89,7 @@ async def test_unit_login_success():
         assert response.refresh_token == "raw_refresh_token_123"
         assert response.token_type == "bearer"
 
+        mock_db.exec.assert_awaited_once()
         mock_db.add.assert_called_once()
         mock_db.commit.assert_awaited_once()
 
@@ -227,6 +228,49 @@ async def test_unit_refresh_success():
         assert mock_token_record.revoked is True
         assert mock_db.add.call_count == 2
         assert mock_db.commit.await_count == 1
+        assert mock_db.exec.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_unit_refresh_pessimistic_locking_and_purges_expired_tokens():
+    mock_db = AsyncMock()
+    mock_db.add = MagicMock()
+    raw_token = "valid_raw_token_concurrency"
+    mock_token_record = RefreshToken(
+        id=15,
+        token_hash=hash_token(raw_token),
+        user_id=1,
+        expires_at=get_utc_now() + timedelta(days=7),
+        revoked=False,
+    )
+    mock_user = User(
+        id=1,
+        nome="Agente Concorrencia",
+        email="concorrencia@teste.com",
+        password_hash="mocked_hash",
+        role=Role.AGENTE,
+        is_active=True,
+    )
+
+    mock_exec_result = MagicMock()
+    mock_exec_result.first.return_value = mock_token_record
+    mock_db.exec.return_value = mock_exec_result
+    mock_db.get.return_value = mock_user
+
+    with (
+        patch(PATCH_ACCESS_TOKEN, return_value="access_token_mock"),
+        patch(PATCH_REFRESH_STR, return_value="refresh_token_mock"),
+    ):
+        request = RefreshTokenRequest(refresh_token=raw_token)
+        await refresh_tokens(request=request, db=mock_db)
+
+        # 1. Verifica lock pessimista (with_for_update) no primeiro SELECT
+        select_stmt = mock_db.exec.call_args_list[0][0][0]
+        assert getattr(select_stmt, "_for_update_arg", None) is not None
+
+        # 2. Verifica segundo exec realizando o DELETE de expurgo de tokens
+        delete_stmt = mock_db.exec.call_args_list[1][0][0]
+        assert delete_stmt.is_delete
 
 
 @pytest.mark.asyncio

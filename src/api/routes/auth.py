@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlmodel import select, update
+from sqlmodel import delete, select, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.api.deps import get_current_user_from_reset_token
@@ -68,6 +68,14 @@ async def login(
         days=settings.REFRESH_TOKEN_EXPIRE_DAYS
     )
 
+    # Expurga tokens expirados do usuário para evitar inchaço da tabela
+    await db.exec(
+        delete(RefreshToken).where(
+            RefreshToken.user_id == user.id,
+            RefreshToken.expires_at < datetime.now(timezone.utc),
+        )
+    )
+
     db_refresh_token = RefreshToken(
         token_hash=hash_token(raw_refresh_token),
         user_id=user.id,
@@ -101,7 +109,11 @@ async def refresh_tokens(
 
     token_h = hash_token(request.refresh_token)
 
-    statement = select(RefreshToken).where(RefreshToken.token_hash == token_h)
+    statement = (
+        select(RefreshToken)
+        .where(RefreshToken.token_hash == token_h)
+        .with_for_update()
+    )
     result = await db.exec(statement)
     token_record = result.first()
 
@@ -133,6 +145,14 @@ async def refresh_tokens(
     user = await db.get(User, token_record.user_id)
     if not user or not user.is_active:
         raise unauthorized_exception
+
+    # Expurga tokens expirados do usuário
+    await db.exec(
+        delete(RefreshToken).where(
+            RefreshToken.user_id == user.id,
+            RefreshToken.expires_at < now,
+        )
+    )
 
     token_record.revoked = True
     db.add(token_record)

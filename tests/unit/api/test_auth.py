@@ -37,6 +37,9 @@ def test_login_sucesso():
             "sqlmodel.ext.asyncio.session.AsyncSession.commit", new_callable=AsyncMock
         ),
         patch("sqlmodel.ext.asyncio.session.AsyncSession.add", return_value=None),
+        patch(
+            "sqlmodel.ext.asyncio.session.AsyncSession.exec", new_callable=AsyncMock
+        ),
     ):
         response = client.post(
             "/auth/login",
