@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlmodel import select
+from sqlmodel import select, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.api.deps import get_current_user_from_reset_token
@@ -116,7 +116,18 @@ async def refresh_tokens(
         else token_record.expires_at
     )
 
-    if token_record.revoked or token_expires < now:
+    if token_record.revoked:
+        # Reuso de token revogado detectado (possível roubo/vazamento de credencial)
+        # RFC 6749 / OAuth 2.0 Security BCP: revoga todas as sessões ativas do usuário
+        await db.exec(
+            update(RefreshToken)
+            .where(RefreshToken.user_id == token_record.user_id)
+            .values(revoked=True)
+        )
+        await db.commit()
+        raise unauthorized_exception
+
+    if token_expires < now:
         raise unauthorized_exception
 
     user = await db.get(User, token_record.user_id)

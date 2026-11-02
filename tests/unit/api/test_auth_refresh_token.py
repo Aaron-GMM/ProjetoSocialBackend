@@ -54,6 +54,7 @@ def test_hash_token_consistency():
 @pytest.mark.asyncio
 async def test_unit_login_success():
     mock_db = AsyncMock()
+    mock_db.add = MagicMock()
     form_data = OAuth2PasswordRequestForm(
         grant_type="password",
         username="agente@teste.com",
@@ -187,6 +188,7 @@ async def test_unit_login_wrong_password():
 @pytest.mark.asyncio
 async def test_unit_refresh_success():
     mock_db = AsyncMock()
+    mock_db.add = MagicMock()
     raw_token = "valid_raw_token"
     mock_token_record = RefreshToken(
         id=10,
@@ -260,6 +262,33 @@ async def test_unit_refresh_token_already_revoked():
         await refresh_tokens(request=request, db=mock_db)
 
     assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "Refresh token inválido, expirado ou revogado."
+    assert mock_db.exec.await_count == 2
+    mock_db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_unit_refresh_token_theft_detection_revokes_all_sessions():
+    mock_db = AsyncMock()
+    compromised_token = RefreshToken(
+        id=99,
+        token_hash=hash_token("stolen_revoked_token"),
+        user_id=42,
+        expires_at=get_utc_now() + timedelta(days=7),
+        revoked=True,
+    )
+    mock_exec_result = MagicMock()
+    mock_exec_result.first.return_value = compromised_token
+    mock_db.exec.return_value = mock_exec_result
+
+    request = RefreshTokenRequest(refresh_token="stolen_revoked_token")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await refresh_tokens(request=request, db=mock_db)
+
+    assert exc_info.value.status_code == 401
+    assert mock_db.exec.await_count == 2
+    mock_db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
