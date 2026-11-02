@@ -225,9 +225,24 @@ class PlacaQueryParams(BaseModel):
     page: int = Field(default=1, ge=1, description="Número da página")
     page_size: int = Field(default=20, ge=1, le=100, description="Itens por página")
 
+    search: str | None = Field(
+        None,
+        description=(
+            "Busca textual geral para barra de pesquisa (filtra por rua/logradouro, "
+            "bairro ou código/tipo da placa)"
+        ),
+        examples=["Centro", "R-1", "PARE", "Basílio"],
+    )
+    busca: str | None = Field(
+        None,
+        description="Alias em português para o parâmetro search",
+        examples=["Centro", "R-1", "PARE", "Basílio"],
+    )
     codigo_contran: str | None = Field(
         None,
-        description="Filtro por código ou tipo da placa (ex: 'R-1', 'R1', 'PARE')",
+        description=(
+            "Filtro específico por código ou tipo da placa (ex: 'R-1', 'R1', 'PARE')"
+        ),
         examples=["R-1", "PARE"],
     )
     bairro: str | None = Field(None, description="Filtro parcial por bairro")

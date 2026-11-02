@@ -1,6 +1,6 @@
 from typing import Any
 
-from sqlalchemy import func, true
+from sqlalchemy import func, or_, true
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -104,8 +104,23 @@ async def _paginate_placa_query(
 async def list_placas(
     db: AsyncSession, params: PlacaQueryParams
 ) -> tuple[int, list[Any]]:
-    """Lista placas paginadas com filtros de código, endereço e estado."""
+    """Lista placas paginadas com filtros de busca geral, código, endereço e estado."""
     stmt, ultimo_evento_sub = _build_base_placa_query()
+
+    termo_busca = (params.search or params.busca or "").strip()
+    if termo_busca:
+        matched_codigos = resolve_codigo_contran_filter(termo_busca)
+        condicoes_codigo = [Placa.codigo_contran.ilike(f"%{termo_busca}%")]
+        if matched_codigos:
+            condicoes_codigo.append(Placa.codigo_contran.in_(matched_codigos))
+
+        stmt = stmt.where(
+            or_(
+                Enderecos.logradouro.ilike(f"%{termo_busca}%"),
+                Enderecos.bairro.ilike(f"%{termo_busca}%"),
+                *condicoes_codigo,
+            )
+        )
 
     if params.codigo_contran:
         matched = resolve_codigo_contran_filter(params.codigo_contran)
