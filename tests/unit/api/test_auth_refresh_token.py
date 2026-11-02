@@ -5,7 +5,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 
-from src.api.routes.auth import login, refresh_tokens, reset_password
+from src.api.routes.auth import login, logout, refresh_tokens, reset_password
 from src.application.schemas.auth_schema import (
     RefreshTokenRequest,
     ResetPasswordRequest,
@@ -381,3 +381,69 @@ async def test_unit_reset_password_revokes_all_active_refresh_tokens():
         )
         mock_db.exec.assert_awaited_once()
         mock_db.commit.assert_awaited_once()
+
+
+# ==============================================================================
+# 5. Testes Unitários: POST /auth/logout
+# ==============================================================================
+
+
+@pytest.mark.asyncio
+async def test_unit_logout_success():
+    mock_db = AsyncMock()
+    mock_db.add = MagicMock()
+    raw_token = "valid_logout_token"
+    mock_token_record = RefreshToken(
+        id=20,
+        token_hash=hash_token(raw_token),
+        user_id=1,
+        expires_at=get_utc_now() + timedelta(days=7),
+        revoked=False,
+    )
+    mock_exec_result = MagicMock()
+    mock_exec_result.first.return_value = mock_token_record
+    mock_db.exec.return_value = mock_exec_result
+
+    request = RefreshTokenRequest(refresh_token=raw_token)
+    response = await logout(request=request, db=mock_db)
+
+    assert response == {"message": "Sessão encerrada com sucesso."}
+    assert mock_token_record.revoked is True
+    mock_db.add.assert_called_once_with(mock_token_record)
+    mock_db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_unit_logout_token_not_found():
+    mock_db = AsyncMock()
+    mock_exec_result = MagicMock()
+    mock_exec_result.first.return_value = None
+    mock_db.exec.return_value = mock_exec_result
+
+    request = RefreshTokenRequest(refresh_token="inexistent_token")
+    response = await logout(request=request, db=mock_db)
+
+    assert response == {"message": "Sessão encerrada com sucesso."}
+    mock_db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unit_logout_already_revoked():
+    mock_db = AsyncMock()
+    raw_token = "already_revoked_logout_token"
+    mock_token_record = RefreshToken(
+        id=21,
+        token_hash=hash_token(raw_token),
+        user_id=1,
+        expires_at=get_utc_now() + timedelta(days=7),
+        revoked=True,
+    )
+    mock_exec_result = MagicMock()
+    mock_exec_result.first.return_value = mock_token_record
+    mock_db.exec.return_value = mock_exec_result
+
+    request = RefreshTokenRequest(refresh_token=raw_token)
+    response = await logout(request=request, db=mock_db)
+
+    assert response == {"message": "Sessão encerrada com sucesso."}
+    mock_db.commit.assert_not_awaited()

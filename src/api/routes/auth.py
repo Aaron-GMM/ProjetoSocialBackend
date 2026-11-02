@@ -159,6 +159,27 @@ async def refresh_tokens(
 
 
 @router.post(
+    "/logout",
+    summary="Revoga o refresh token e encerra a sessão",
+)
+async def logout(
+    request: RefreshTokenRequest,
+    db: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, str]:
+    token_h = hash_token(request.refresh_token)
+    statement = select(RefreshToken).where(RefreshToken.token_hash == token_h)
+    result = await db.exec(statement)
+    token_record = result.first()
+
+    if token_record and not token_record.revoked:
+        token_record.revoked = True
+        db.add(token_record)
+        await db.commit()
+
+    return {"message": "Sessão encerrada com sucesso."}
+
+
+@router.post(
     "/forgot-password",
     response_model=ForgotPasswordResponse,
     summary="Solicita redefinição de senha",
