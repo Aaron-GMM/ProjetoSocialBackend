@@ -25,11 +25,18 @@ def test_login_sucesso():
     fake_user.id = 1
     fake_user.role = Role.ADMINISTRADOR
     fake_user.password_hash = get_password_hash("senha_valida")
+    fake_user.is_active = True
 
-    with patch(
-        "src.api.routes.auth.get_user_by_email_case_insensitive",
-        new_callable=AsyncMock,
-        return_value=fake_user,
+    with (
+        patch(
+            "src.api.routes.auth.get_user_by_email_case_insensitive",
+            new_callable=AsyncMock,
+            return_value=fake_user,
+        ),
+        patch(
+            "sqlmodel.ext.asyncio.session.AsyncSession.commit", new_callable=AsyncMock
+        ),
+        patch("sqlmodel.ext.asyncio.session.AsyncSession.add", return_value=None),
     ):
         response = client.post(
             "/auth/login",
@@ -39,6 +46,7 @@ def test_login_sucesso():
         assert response.status_code == 200
         body = response.json()
         assert "access_token" in body
+        assert "refresh_token" in body
         assert body["token_type"] == "bearer"
 
         payload = jwt.decode(body["access_token"], SECRET_KEY, algorithms=[ALGORITHM])
