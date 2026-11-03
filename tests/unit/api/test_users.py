@@ -82,16 +82,44 @@ async def test_list_users_as_agent_forbidden(client: AsyncClient, agent_token: s
 
 
 @pytest.mark.asyncio
-async def test_update_user_as_admin(client: AsyncClient, admin_token: str, agent_user):
+async def test_update_user_as_admin(
+    client: AsyncClient, admin_token: str, agent_user, agent_token: str, db_session
+):
+    from datetime import datetime, timedelta, timezone
+
+    from src.core.security import hash_token
+    from src.domain.models.refresh_token import RefreshToken
+
+    agent_id = agent_user.id
+    rf = RefreshToken(
+        token_hash=hash_token("token_agente_para_revogar"),
+        user_id=agent_id,
+        expires_at=(datetime.now(timezone.utc) + timedelta(days=7)).replace(
+            tzinfo=None
+        ),
+        revoked=False,
+    )
+    db_session.add(rf)
+    await db_session.commit()
+    await db_session.refresh(rf)
+
     headers = {"Authorization": f"Bearer {admin_token}"}
     update_data = {"is_active": False, "nome": "Agente Desativado"}
     response = await client.patch(
-        f"/users/{agent_user.id}", json=update_data, headers=headers
+        f"/users/{agent_id}", json=update_data, headers=headers
     )
     assert response.status_code == 200, response.json()
     data = response.json()
     assert data["is_active"] is False
     assert data["nome"] == "Agente Desativado"
+
+    await db_session.refresh(rf)
+    assert rf.revoked is True
+
+    agent_headers = {"Authorization": f"Bearer {agent_token}"}
+    blocked_response = await client.get("/users/me", headers=agent_headers)
+    assert blocked_response.status_code == 403
+    assert blocked_response.json()["detail"] == "Usuário inativo."
 
 
 @pytest.mark.asyncio
