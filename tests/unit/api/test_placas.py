@@ -413,7 +413,7 @@ async def test_list_eventos_placa_success(
     await db_session.commit()
 
     response = await client.get(
-        f"/placas/{placa_id}/eventos",
+        f"/placas/{placa_id}/historico",
         headers=agent_headers,
     )
 
@@ -430,14 +430,14 @@ async def test_list_eventos_placa_success(
 @pytest.mark.asyncio
 async def test_list_eventos_placa_unauthenticated(client: AsyncClient):
     """Testa listagem de eventos sem token de autenticação."""
-    response = await client.get(f"/placas/{uuid4()}/eventos")
+    response = await client.get(f"/placas/{uuid4()}/historico")
     assert response.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_list_eventos_placa_not_found(client: AsyncClient, agent_headers):
     """Testa listagem de eventos para placa inexistente (HTTP 404)."""
-    response = await client.get(f"/placas/{uuid4()}/eventos", headers=agent_headers)
+    response = await client.get(f"/placas/{uuid4()}/historico", headers=agent_headers)
     assert response.status_code == 404
     assert response.json()["detail"] == "Placa não encontrada."
 
@@ -478,7 +478,7 @@ async def test_list_eventos_placa_pagination_and_order(
 
     # Página 1 com page_size=1 -> deve trazer o evento mais recente (VISTORIA)
     res_p1 = await client.get(
-        f"/placas/{placa_id}/eventos?page=1&page_size=1",
+        f"/placas/{placa_id}/historico?page=1&page_size=1",
         headers=agent_headers,
     )
     assert res_p1.status_code == 200
@@ -492,7 +492,7 @@ async def test_list_eventos_placa_pagination_and_order(
 
     # Página 2 com page_size=1 -> deve trazer o evento mais antigo (CRIACAO)
     res_p2 = await client.get(
-        f"/placas/{placa_id}/eventos?page=2&page_size=1",
+        f"/placas/{placa_id}/historico?page=2&page_size=1",
         headers=agent_headers,
     )
     assert res_p2.status_code == 200
