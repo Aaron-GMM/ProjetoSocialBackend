@@ -9,6 +9,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from src.api.deps import get_current_user
 from src.application.schemas.placa_schema import (
     EnderecoResponse,
+    EventoPlacaListResponse,
     EventoPlacaResponse,
     PlacaCreate,
     PlacaListResponse,
@@ -432,3 +433,37 @@ async def update_placa(
 
     updated_row = await placa_functions.get_placa_by_id(db, placa_id)
     return (await _serialize_placa_rows([updated_row]))[0]
+
+
+@router.get(
+    "/{id}/eventos",
+    response_model=EventoPlacaListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Lista eventos de uma placa específica",
+    description=(
+        "Recupera uma lista paginada de eventos de uma placa específica.\n\n"
+        "**Recursos e Filtros:**\n"
+        "- Paginação (`page`, `page_size`).\n"
+    ),
+    response_description="Lista paginada de eventos de uma placa específica.",
+)
+async def list_eventos_placa(
+    id: UUID,
+    params: Annotated[PlacaQueryParams, Query()],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    total, rows = await placa_functions.list_eventos_placa(session, id, params)
+    items: list[EventoPlacaResponse] = []
+    for row in rows:
+        item = EventoPlacaResponse.model_validate(row)
+        if item.foto_url:
+            item.foto_url = minio_service.get_public_url(item.foto_url)
+        items.append(item)
+
+    return EventoPlacaListResponse(
+        total=total,
+        page=params.page,
+        page_size=params.page_size,
+        items=items,
+    )

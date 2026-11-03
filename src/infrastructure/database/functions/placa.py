@@ -169,9 +169,28 @@ async def list_placas(
 
     return await _paginate_placa_query(db, stmt, params.page, params.page_size)
 
-
 async def get_placa_by_id(db: AsyncSession, placa_id: UUID) -> Any | None:
     """Busca uma placa com endereço e último evento pelo ID."""
     stmt, _ = _build_base_placa_query()
     result = await db.exec(stmt.where(Placa.id == placa_id))
     return result.first()
+
+
+async def list_eventos_placa(
+    db: AsyncSession, placa_id: UUID, params: PlacaQueryParams
+) -> tuple[int, list[EventosPlaca]]:
+    """Lista eventos de uma placa específica paginados."""
+    stmt = (
+        select(EventosPlaca)
+        .where(EventosPlaca.placa_id == placa_id)
+        .order_by(EventosPlaca.timestamp.desc())
+    )
+
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = (await db.exec(count_stmt)).one()
+
+    offset = (params.page - 1) * params.page_size
+    paginated_stmt = stmt.offset(offset).limit(params.page_size)
+
+    result = await db.exec(paginated_stmt)
+    return total, list(result.all())
