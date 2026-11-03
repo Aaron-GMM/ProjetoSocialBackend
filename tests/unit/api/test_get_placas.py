@@ -155,7 +155,7 @@ async def test_get_placas_success_e_ultimo_evento(
     db_session.add(vistoria)
     await db_session.commit()
 
-    response = await client.get("/placas/")
+    response = await client.get("/placas/", headers=agent_headers)
 
     assert response.status_code == 200, response.json()
     data = response.json()
@@ -182,11 +182,15 @@ async def test_get_placas_filtros_textuais_ilike(
         logradouro="Avenida Plácido Castelo",
     )
 
-    res_bairro = await client.get("/placas/", params={"bairro": "campo"})
+    res_bairro = await client.get(
+        "/placas/", params={"bairro": "campo"}, headers=agent_headers
+    )
     assert res_bairro.status_code == 200
     assert [i["id"] for i in res_bairro.json()["items"]] == [placa["id"]]
 
-    res_logradouro = await client.get("/placas/", params={"logradouro": "plácido"})
+    res_logradouro = await client.get(
+        "/placas/", params={"logradouro": "plácido"}, headers=agent_headers
+    )
     assert res_logradouro.status_code == 200
     assert [i["id"] for i in res_logradouro.json()["items"]] == [placa["id"]]
 
@@ -204,7 +208,9 @@ async def test_get_placas_filtro_estado_conservacao(
         estado_conservacao="RUIM",
     )
 
-    response = await client.get("/placas/", params={"estado_conservacao": "RUIM"})
+    response = await client.get(
+        "/placas/", params={"estado_conservacao": "RUIM"}, headers=agent_headers
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -223,8 +229,12 @@ async def test_get_placas_paginacao(client: AsyncClient, quixada, agent_headers)
         logradouro="Rua 2",
     )
 
-    res_p1 = await client.get("/placas/", params={"page": 1, "page_size": 1})
-    res_p2 = await client.get("/placas/", params={"page": 2, "page_size": 1})
+    res_p1 = await client.get(
+        "/placas/", params={"page": 1, "page_size": 1}, headers=agent_headers
+    )
+    res_p2 = await client.get(
+        "/placas/", params={"page": 2, "page_size": 1}, headers=agent_headers
+    )
 
     assert res_p1.status_code == 200
     assert res_p2.status_code == 200
@@ -237,9 +247,11 @@ async def test_get_placas_paginacao(client: AsyncClient, quixada, agent_headers)
 
 
 @pytest.mark.asyncio
-async def test_get_placas_nenhum_resultado(client: AsyncClient):
+async def test_get_placas_nenhum_resultado(client: AsyncClient, agent_headers):
     response = await client.get(
-        "/placas/", params={"bairro": "Bairro Inexistente Jamais Visto"}
+        "/placas/",
+        params={"bairro": "Bairro Inexistente Jamais Visto"},
+        headers=agent_headers,
     )
 
     assert response.status_code == 200
@@ -266,7 +278,7 @@ async def test_get_placas_sem_endereco_retorna_corretamente(
     created_id = create_res.json()["id"]
 
     # 1. Verifica no endpoint geral /placas/
-    res_list = await client.get("/placas/")
+    res_list = await client.get("/placas/", headers=agent_headers)
     assert res_list.status_code == 200
     list_data = res_list.json()
     assert list_data["total"] == 1
@@ -289,7 +301,9 @@ async def test_get_placas_filtro_codigo_contran(
     assert res_a18.status_code == 201
 
     # 1. Busca exata por 'R-1'
-    res_exact = await client.get("/placas/", params={"codigo_contran": "R-1"})
+    res_exact = await client.get(
+        "/placas/", params={"codigo_contran": "R-1"}, headers=agent_headers
+    )
     assert res_exact.status_code == 200
     assert len(res_exact.json()["items"]) == 1
     assert res_exact.json()["items"][0]["id"] == p_r1["id"]
@@ -298,27 +312,33 @@ async def test_get_placas_filtro_codigo_contran(
     )
 
     # 2. Busca por alias sem hífen 'R1'
-    res_alias = await client.get("/placas/", params={"codigo_contran": "R1"})
+    res_alias = await client.get(
+        "/placas/", params={"codigo_contran": "R1"}, headers=agent_headers
+    )
     assert res_alias.status_code == 200
     assert len(res_alias.json()["items"]) == 1
     assert res_alias.json()["items"][0]["id"] == p_r1["id"]
 
     # 3. Busca por texto 'pare'
-    res_desc = await client.get("/placas/", params={"codigo_contran": "pare"})
+    res_desc = await client.get(
+        "/placas/", params={"codigo_contran": "pare"}, headers=agent_headers
+    )
     assert res_desc.status_code == 200
     assert len(res_desc.json()["items"]) == 1
     assert res_desc.json()["items"][0]["id"] == p_r1["id"]
 
     # 4. Busca por 'lombada' -> A-18
-    res_lombada = await client.get("/placas/", params={"codigo_contran": "lombada"})
+    res_lombada = await client.get(
+        "/placas/", params={"codigo_contran": "lombada"}, headers=agent_headers
+    )
     assert res_lombada.status_code == 200
     assert len(res_lombada.json()["items"]) == 1
     assert res_lombada.json()["items"][0]["codigo_contran"] == "A-18"
 
 
 @pytest.mark.asyncio
-async def test_get_placas_tipos_catalogo(client: AsyncClient):
-    response = await client.get("/placas/tipos")
+async def test_get_placas_tipos_catalogo(client: AsyncClient, agent_headers):
+    response = await client.get("/placas/tipos", headers=agent_headers)
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
