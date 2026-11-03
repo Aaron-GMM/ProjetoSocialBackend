@@ -20,6 +20,7 @@ async def test_list_eventos_placa(db_session: AsyncSession):
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
+    user_id = user.id
 
     placa = Placa(
         codigo_contran="R-1",
@@ -28,10 +29,11 @@ async def test_list_eventos_placa(db_session: AsyncSession):
     db_session.add(placa)
     await db_session.commit()
     await db_session.refresh(placa)
+    placa_id = placa.id
 
     evento1 = EventosPlaca(
-        placa_id=placa.id,
-        created_by=user.id,
+        placa_id=placa_id,
+        created_by=user_id,
         tipo_evento=TipoEvento.CRIACAO,
         estado_conservacao=EstadoConservacao.BOM,
         estado_pelicula=EstadoConservacao.BOM,
@@ -39,13 +41,13 @@ async def test_list_eventos_placa(db_session: AsyncSession):
         estado_suporte=EstadoConservacao.BOM,
         observacao="Instalação inicial",
     )
-    
+
     db_session.add(evento1)
     await db_session.commit()
 
     params = PlacaQueryParams(page=1, page_size=20)
     total, eventos = await placa_functions.list_eventos_placa(
-        db_session, placa.id, params
+        db_session, placa_id, params
     )
 
     assert total == 1
