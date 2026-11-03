@@ -110,9 +110,7 @@ async def refresh_tokens(
     token_h = hash_token(request.refresh_token)
 
     statement = (
-        select(RefreshToken)
-        .where(RefreshToken.token_hash == token_h)
-        .with_for_update()
+        select(RefreshToken).where(RefreshToken.token_hash == token_h).with_for_update()
     )
     result = await db.exec(statement)
     token_record = result.first()
