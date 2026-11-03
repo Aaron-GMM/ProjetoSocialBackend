@@ -360,3 +360,14 @@ class PlacaListResponse(BaseModel):
     items: list[PlacaResponse]
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class EventoPlacaListResponse(BaseModel):
+    """Schema de resposta paginada da listagem de eventos de uma placa."""
+
+    total: int
+    page: int
+    page_size: int
+    items: list[EventoPlacaResponse]
+
+    model_config = ConfigDict(from_attributes=True)

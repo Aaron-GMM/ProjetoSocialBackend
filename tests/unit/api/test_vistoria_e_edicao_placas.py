@@ -133,7 +133,7 @@ async def test_create_vistoria_success(
     assert data["foto_url"].endswith(NEW_OBJECT)
     assert await count_rows(db_session, EventosPlaca) == 2
 
-    list_response = await client.get("/placas/")
+    list_response = await client.get("/placas/", headers=agent_headers)
     ultimo_evento = list_response.json()["items"][0]["ultimo_evento"]
     assert ultimo_evento["id"] == data["id"]
     assert ultimo_evento["tipo_evento"] == "VISTORIA"

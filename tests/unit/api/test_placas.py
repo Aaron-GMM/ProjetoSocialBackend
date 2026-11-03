@@ -1,4 +1,5 @@
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
 import pytest
 import pytest_asyncio
@@ -380,3 +381,122 @@ async def test_create_placa_rollback_on_commit_error():
         await placa_functions.create_placa(mock_db, placa, endereco, evento)
 
     mock_db.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_list_eventos_placa_success(
+    client: AsyncClient, db_session, agent_user, agent_headers
+):
+    """Testa listagem de eventos de uma placa com sucesso."""
+    agent_id = agent_user.id
+    placa = Placa(
+        codigo_contran=CodigoContran.R_1,
+        location="POINT(-39.0154 -4.9714)",
+    )
+    db_session.add(placa)
+    await db_session.commit()
+    await db_session.refresh(placa)
+    placa_id = placa.id
+
+    evento1 = EventosPlaca(
+        placa_id=placa_id,
+        created_by=agent_id,
+        tipo_evento=TipoEvento.CRIACAO,
+        estado_conservacao=EstadoConservacao.BOM,
+        estado_pelicula=EstadoConservacao.BOM,
+        estado_substrato=EstadoConservacao.BOM,
+        estado_suporte=EstadoConservacao.BOM,
+        observacao="Instalação inicial",
+    )
+
+    db_session.add(evento1)
+    await db_session.commit()
+
+    response = await client.get(
+        f"/placas/{placa_id}/eventos",
+        headers=agent_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["page"] == 1
+    assert data["page_size"] == 20
+    assert len(data["items"]) == 1
+    assert data["items"][0]["tipo_evento"] == "CRIACAO"
+    assert data["items"][0]["observacao"] == "Instalação inicial"
+
+
+@pytest.mark.asyncio
+async def test_list_eventos_placa_unauthenticated(client: AsyncClient):
+    """Testa listagem de eventos sem token de autenticação."""
+    response = await client.get(f"/placas/{uuid4()}/eventos")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_list_eventos_placa_not_found(client: AsyncClient, agent_headers):
+    """Testa listagem de eventos para placa inexistente (HTTP 404)."""
+    response = await client.get(f"/placas/{uuid4()}/eventos", headers=agent_headers)
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Placa não encontrada."
+
+
+@pytest.mark.asyncio
+async def test_list_eventos_placa_pagination_and_order(
+    client: AsyncClient, db_session, agent_user, agent_headers
+):
+    """Testa paginação e ordenação decrescente por timestamp nos eventos da placa."""
+    agent_id = agent_user.id
+    placa = Placa(
+        codigo_contran=CodigoContran.R_1,
+        location="POINT(-39.0154 -4.9714)",
+    )
+    db_session.add(placa)
+    await db_session.commit()
+    await db_session.refresh(placa)
+    placa_id = placa.id
+
+    evento_criacao = EventosPlaca(
+        placa_id=placa_id,
+        created_by=agent_id,
+        tipo_evento=TipoEvento.CRIACAO,
+        foto_url="placas/foto_criacao.jpg",
+        estado_conservacao=EstadoConservacao.BOM,
+        observacao="Evento 1: Criacao",
+    )
+    evento_vistoria = EventosPlaca(
+        placa_id=placa_id,
+        created_by=agent_id,
+        tipo_evento=TipoEvento.VISTORIA,
+        foto_url="placas/foto_vistoria.jpg",
+        estado_conservacao=EstadoConservacao.REGULAR,
+        observacao="Evento 2: Vistoria mais recente",
+    )
+    db_session.add_all([evento_criacao, evento_vistoria])
+    await db_session.commit()
+
+    # Página 1 com page_size=1 -> deve trazer o evento mais recente (VISTORIA)
+    res_p1 = await client.get(
+        f"/placas/{placa_id}/eventos?page=1&page_size=1",
+        headers=agent_headers,
+    )
+    assert res_p1.status_code == 200
+    data_p1 = res_p1.json()
+    assert data_p1["total"] == 2
+    assert data_p1["page"] == 1
+    assert data_p1["page_size"] == 1
+    assert len(data_p1["items"]) == 1
+    assert data_p1["items"][0]["tipo_evento"] == "VISTORIA"
+    assert "foto_vistoria.jpg" in data_p1["items"][0]["foto_url"]
+
+    # Página 2 com page_size=1 -> deve trazer o evento mais antigo (CRIACAO)
+    res_p2 = await client.get(
+        f"/placas/{placa_id}/eventos?page=2&page_size=1",
+        headers=agent_headers,
+    )
+    assert res_p2.status_code == 200
+    data_p2 = res_p2.json()
+    assert len(data_p2["items"]) == 1
+    assert data_p2["items"][0]["tipo_evento"] == "CRIACAO"
+    assert "foto_criacao.jpg" in data_p2["items"][0]["foto_url"]
