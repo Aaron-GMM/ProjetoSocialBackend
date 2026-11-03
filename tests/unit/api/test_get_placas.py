@@ -399,60 +399,78 @@ async def test_get_placas_filtro_busca_geral_search(
     p_r2 = res_r2.json()
 
     # 1. Busca por Rua (logradouro)
-    res_rua = await client.get("/placas/", params={"search": "Basílio"})
+    res_rua = await client.get(
+        "/placas/", params={"search": "Basílio"}, headers=agent_headers
+    )
     assert res_rua.status_code == 200
     ids_rua = [i["id"] for i in res_rua.json()["items"]]
     assert p_r1["id"] in ids_rua
     assert p_a18["id"] not in ids_rua
 
     # 2. Busca por Bairro
-    res_bairro = await client.get("/placas/", params={"search": "Campo Novo"})
+    res_bairro = await client.get(
+        "/placas/", params={"search": "Campo Novo"}, headers=agent_headers
+    )
     assert res_bairro.status_code == 200
     ids_bairro = [i["id"] for i in res_bairro.json()["items"]]
     assert p_a18["id"] in ids_bairro
     assert p_r1["id"] not in ids_bairro
 
     # 3. Busca por Descrição CONTRAN ('pare')
-    res_pare = await client.get("/placas/", params={"search": "pare"})
+    res_pare = await client.get(
+        "/placas/", params={"search": "pare"}, headers=agent_headers
+    )
     assert res_pare.status_code == 200
     ids_pare = [i["id"] for i in res_pare.json()["items"]]
     assert p_r1["id"] in ids_pare
     assert p_a18["id"] not in ids_pare
 
     # 4. Busca por Descrição CONTRAN ('lombada')
-    res_lombada = await client.get("/placas/", params={"search": "lombada"})
+    res_lombada = await client.get(
+        "/placas/", params={"search": "lombada"}, headers=agent_headers
+    )
     assert res_lombada.status_code == 200
     ids_lombada = [i["id"] for i in res_lombada.json()["items"]]
     assert p_a18["id"] in ids_lombada
     assert p_r1["id"] not in ids_lombada
 
     # 5. Busca por Código com alias sem hífen ('R1')
-    res_r1_alias = await client.get("/placas/", params={"search": "R1"})
+    res_r1_alias = await client.get(
+        "/placas/", params={"search": "R1"}, headers=agent_headers
+    )
     assert res_r1_alias.status_code == 200
     ids_r1 = [i["id"] for i in res_r1_alias.json()["items"]]
     assert p_r1["id"] in ids_r1
 
     # 6. Busca por Código exato ('A-18')
-    res_code = await client.get("/placas/", params={"search": "A-18"})
+    res_code = await client.get(
+        "/placas/", params={"search": "A-18"}, headers=agent_headers
+    )
     assert res_code.status_code == 200
     ids_code = [i["id"] for i in res_code.json()["items"]]
     assert p_a18["id"] in ids_code
 
     # 7. Busca com alias em português ('busca')
-    res_busca = await client.get("/placas/", params={"busca": "Centro"})
+    res_busca = await client.get(
+        "/placas/", params={"busca": "Centro"}, headers=agent_headers
+    )
     assert res_busca.status_code == 200
     ids_busca = [i["id"] for i in res_busca.json()["items"]]
     assert p_r1["id"] in ids_busca
 
     # 8. Busca em placa sem endereço via código CONTRAN
-    res_sem_end = await client.get("/placas/", params={"search": "R-2"})
+    res_sem_end = await client.get(
+        "/placas/", params={"search": "R-2"}, headers=agent_headers
+    )
     assert res_sem_end.status_code == 200
     ids_sem_end = [i["id"] for i in res_sem_end.json()["items"]]
     assert p_r2["id"] in ids_sem_end
 
     # 9. Busca por termo inexistente
     res_inexistente = await client.get(
-        "/placas/", params={"search": "InexistenteXYZ123"}
+        "/placas/",
+        params={"search": "InexistenteXYZ123"},
+        headers=agent_headers,
     )
     assert res_inexistente.status_code == 200
     assert len(res_inexistente.json()["items"]) == 0
