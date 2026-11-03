@@ -272,7 +272,9 @@ async def create_placa(
         "Retorna a lista de todos os códigos CONTRAN e suas descrições para filtros."
     ),
 )
-async def list_tipos_placas() -> list[PlacaTipoItem]:
+async def list_tipos_placas(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> list[PlacaTipoItem]:
     return [
         PlacaTipoItem(codigo=codigo, descricao=descricao)
         for codigo, descricao in CONTRAN_DESCRICOES.items()
@@ -301,6 +303,7 @@ async def list_tipos_placas() -> list[PlacaTipoItem]:
 async def list_placas(
     params: Annotated[PlacaQueryParams, Query()],
     session: Annotated[AsyncSession, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ):
     total, rows = await placa_functions.list_placas(session, params)
     items = await _serialize_placa_rows(rows)
