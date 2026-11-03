@@ -5,14 +5,40 @@ from uuid import UUID
 from fastapi import Form
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.application.schemas.evento_schema import (
+    EventoPlacaCreate,
+    EventoPlacaListResponse,
+    EventoPlacaResponse,
+    EventoPlacaUpdate,
+    EventoQueryParams,
+    EventoTimelineResponse,
+    VistoriaCreate,
+)
 from src.domain.enums.placa_enums import (
     CodigoContran,
     EstadoConservacao,
-    TipoEvento,
     TipoPelicula,
     TipoSubstrato,
     TipoSuporte,
 )
+
+__all__ = [
+    "EnderecoCreate",
+    "EnderecoResponse",
+    "EventoPlacaCreate",
+    "EventoPlacaListResponse",
+    "EventoPlacaResponse",
+    "EventoPlacaUpdate",
+    "EventoQueryParams",
+    "EventoTimelineResponse",
+    "PlacaCreate",
+    "PlacaListResponse",
+    "PlacaQueryParams",
+    "PlacaResponse",
+    "PlacaTipoItem",
+    "PlacaUpdate",
+    "VistoriaCreate",
+]
 
 
 class EnderecoCreate(BaseModel):
@@ -156,49 +182,6 @@ class PlacaCreate(BaseModel):
         )
 
 
-class VistoriaCreate(BaseModel):
-    """Schema de criação de um relatório de vistoria em uma placa existente."""
-
-    estado_conservacao: EstadoConservacao
-    estado_pelicula: EstadoConservacao | None = None
-    estado_substrato: EstadoConservacao | None = None
-    estado_suporte: EstadoConservacao | None = None
-    observacao: str | None = None
-
-    @classmethod
-    def as_form(
-        cls,
-        estado_conservacao: Annotated[
-            EstadoConservacao, Form(description="Estado geral de conservação")
-        ],
-        estado_pelicula: Annotated[
-            EstadoConservacao | None,
-            Form(description="Estado de conservação da película"),
-        ] = None,
-        estado_substrato: Annotated[
-            EstadoConservacao | None,
-            Form(description="Estado de conservação do substrato"),
-        ] = None,
-        estado_suporte: Annotated[
-            EstadoConservacao | None,
-            Form(description="Estado de conservação do suporte"),
-        ] = None,
-        observacao: Annotated[
-            str | None, Form(description="Observação do agente")
-        ] = None,
-    ) -> "VistoriaCreate":
-        """Constrói o schema VistoriaCreate a partir de campos multipart/form-data."""
-        return cls(
-            estado_conservacao=estado_conservacao,
-            estado_pelicula=estado_pelicula,
-            estado_substrato=estado_substrato,
-            estado_suporte=estado_suporte,
-            observacao=observacao.strip()
-            if observacao and observacao.strip()
-            else None,
-        )
-
-
 class PlacaUpdate(BaseModel):
     """Schema de edição cadastral da placa (todos os campos opcionais)."""
 
@@ -263,23 +246,6 @@ class EnderecoResponse(BaseModel):
     bairro: str | None = None
     cep: str | None = None
     referencia: str | None = None
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class EventoPlacaResponse(BaseModel):
-    """Schema de resposta de um evento da placa."""
-
-    id: UUID
-    created_by: int
-    tipo_evento: TipoEvento
-    estado_conservacao: EstadoConservacao
-    estado_pelicula: EstadoConservacao | None
-    estado_substrato: EstadoConservacao | None
-    estado_suporte: EstadoConservacao | None
-    foto_url: str | None
-    observacao: str | None
-    timestamp: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -358,16 +324,5 @@ class PlacaListResponse(BaseModel):
     page: int
     page_size: int
     items: list[PlacaResponse]
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class EventoPlacaListResponse(BaseModel):
-    """Schema de resposta paginada da listagem de eventos de uma placa."""
-
-    total: int
-    page: int
-    page_size: int
-    items: list[EventoPlacaResponse]
 
     model_config = ConfigDict(from_attributes=True)
