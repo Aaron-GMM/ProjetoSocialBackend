@@ -273,7 +273,8 @@ async def create_placa(
     ),
 )
 async def list_tipos_placas(
-    current_user: Annotated[User, Depends(get_current_user)],) -> list[PlacaTipoItem]:
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> list[PlacaTipoItem]:
     return [
         PlacaTipoItem(codigo=codigo, descricao=descricao)
         for codigo, descricao in CONTRAN_DESCRICOES.items()
@@ -455,6 +456,7 @@ async def list_eventos_placa(
     session: Annotated[AsyncSession, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
+    await _get_placa_row_or_404(session, id)
     total, rows = await placa_functions.list_eventos_placa(session, id, params)
     items: list[EventoPlacaResponse] = []
     for row in rows:

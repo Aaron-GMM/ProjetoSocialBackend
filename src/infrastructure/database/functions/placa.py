@@ -169,6 +169,7 @@ async def list_placas(
 
     return await _paginate_placa_query(db, stmt, params.page, params.page_size)
 
+
 async def get_placa_by_id(db: AsyncSession, placa_id: UUID) -> Any | None:
     """Busca uma placa com endereço e último evento pelo ID."""
     stmt, _ = _build_base_placa_query()
