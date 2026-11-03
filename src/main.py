@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import auth, placas, users
+from src.api.routes import auth, eventos, placas, users
 from src.core.config import settings
 
 app = FastAPI(
@@ -21,6 +21,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(placas.router)
+app.include_router(eventos.router)
 
 
 @app.get("/")

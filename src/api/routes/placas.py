@@ -7,17 +7,15 @@ from geoalchemy2 import WKTElement
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.api.deps import get_current_user
+from src.application.schemas.evento_schema import EventoPlacaResponse
 from src.application.schemas.placa_schema import (
     EnderecoResponse,
-    EventoPlacaListResponse,
-    EventoPlacaResponse,
     PlacaCreate,
     PlacaListResponse,
     PlacaQueryParams,
     PlacaResponse,
     PlacaTipoItem,
     PlacaUpdate,
-    VistoriaCreate,
 )
 from src.domain.enums.placa_enums import CONTRAN_DESCRICOES, TipoEvento
 from src.domain.models.endereco import Enderecos
@@ -316,55 +314,6 @@ async def list_placas(
     )
 
 
-@router.post(
-    "/{placa_id}/vistoria",
-    response_model=EventoPlacaResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Registra uma nova vistoria em uma placa existente",
-    description=(
-        "Cadastra um novo relatório de vistoria via `multipart/form-data`.\n\n"
-        "**Regras de Negócio:**\n"
-        "- Requer usuário autenticado (Agente ou Administrador).\n"
-        "- A tabela `placas` não é alterada: um novo evento `VISTORIA` é inserido "
-        "em `eventos_placa` (Append-Only).\n"
-        "- A foto é enviada ao MinIO antes do commit e removida caso o banco falhe."
-    ),
-    response_description="Evento de vistoria criado com a URL da foto.",
-)
-async def create_vistoria(
-    placa_id: UUID,
-    vistoria: Annotated[VistoriaCreate, Depends(VistoriaCreate.as_form)],
-    foto: Annotated[
-        UploadFile,
-        File(..., description="Foto da placa no momento da vistoria"),
-    ],
-    db: Annotated[AsyncSession, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
-):
-    await _get_placa_row_or_404(db, placa_id)
-    file_bytes = await _read_image(foto)
-    object_name = await _upload_image(foto, file_bytes, placa_id)
-
-    evento = EventosPlaca(
-        placa_id=placa_id,
-        created_by=current_user.id,
-        tipo_evento=TipoEvento.VISTORIA,
-        foto_url=object_name,
-        **vistoria.model_dump(),
-    )
-
-    try:
-        evento = await placa_functions.create_evento(db, evento)
-    except Exception:
-        with suppress(StorageError):
-            await minio_service.delete_file_async(object_name)
-        raise
-
-    evento_response = EventoPlacaResponse.model_validate(evento)
-    evento_response.foto_url = minio_service.get_public_url(object_name)
-    return evento_response
-
-
 @router.patch(
     "/{placa_id}",
     response_model=PlacaResponse,
@@ -436,38 +385,3 @@ async def update_placa(
 
     updated_row = await placa_functions.get_placa_by_id(db, placa_id)
     return (await _serialize_placa_rows([updated_row]))[0]
-
-
-@router.get(
-    "/{id}/eventos",
-    response_model=EventoPlacaListResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Lista eventos de uma placa específica",
-    description=(
-        "Recupera uma lista paginada de eventos de uma placa específica.\n\n"
-        "**Recursos e Filtros:**\n"
-        "- Paginação (`page`, `page_size`).\n"
-    ),
-    response_description="Lista paginada de eventos de uma placa específica.",
-)
-async def list_eventos_placa(
-    id: UUID,
-    params: Annotated[PlacaQueryParams, Query()],
-    session: Annotated[AsyncSession, Depends(get_session)],
-    current_user: Annotated[User, Depends(get_current_user)],
-):
-    await _get_placa_row_or_404(session, id)
-    total, rows = await placa_functions.list_eventos_placa(session, id, params)
-    items: list[EventoPlacaResponse] = []
-    for row in rows:
-        item = EventoPlacaResponse.model_validate(row)
-        if item.foto_url:
-            item.foto_url = minio_service.get_public_url(item.foto_url)
-        items.append(item)
-
-    return EventoPlacaListResponse(
-        total=total,
-        page=params.page,
-        page_size=params.page_size,
-        items=items,
-    )
