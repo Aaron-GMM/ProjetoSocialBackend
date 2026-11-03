@@ -4,7 +4,11 @@ from fastapi import Depends, FastAPI, status
 from fastapi.testclient import TestClient
 from jose import jwt
 
-from src.api.deps import get_current_user, require_admin
+from src.api.deps import (
+    get_current_user,
+    get_current_user_from_reset_token,
+    require_admin,
+)
 from src.core.security import (
     ALGORITHM,
     SECRET_KEY,
@@ -21,6 +25,11 @@ app = FastAPI()
 @app.get("/test/protected")
 async def protected_route(user: User = Depends(get_current_user)):
     return {"message": "ok", "user_id": user.id}
+
+
+@app.get("/test/reset-protected")
+async def reset_route(user: User = Depends(get_current_user_from_reset_token)):
+    return {"message": "reset ok", "user_id": user.id}
 
 
 @app.get("/test/admin-only")
@@ -72,6 +81,7 @@ def test_get_current_user_sucesso():
     fake_user = MagicMock(spec=User)
     fake_user.id = 1
     fake_user.role = Role.ADMINISTRADOR
+    fake_user.is_active = True
 
     mock_db = AsyncMock()
     mock_db.get.return_value = fake_user
@@ -135,5 +145,72 @@ def test_require_admin_permite_administrador():
         response = client.get("/test/admin-only")
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["role"] == Role.ADMINISTRADOR.value
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_current_user_usuario_inativo_retorna_403():
+    token = create_access_token(data={"sub": "1", "role": Role.AGENTE.value})
+    fake_user = MagicMock(spec=User)
+    fake_user.id = 1
+    fake_user.role = Role.AGENTE
+    fake_user.is_active = False
+
+    mock_db = AsyncMock()
+    mock_db.get.return_value = fake_user
+
+    app.dependency_overrides[get_session] = lambda: mock_db
+
+    try:
+        response = client.get(
+            "/test/protected",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.json()["detail"] == "Usuário inativo."
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_current_user_from_reset_token_usuario_inativo_retorna_403():
+    token = create_reset_token(user_id=1)
+    fake_user = MagicMock(spec=User)
+    fake_user.id = 1
+    fake_user.is_active = False
+
+    mock_db = AsyncMock()
+    mock_db.get.return_value = fake_user
+
+    app.dependency_overrides[get_session] = lambda: mock_db
+
+    try:
+        response = client.get(
+            "/test/reset-protected",
+            params={"token": token},
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.json()["detail"] == "Usuário inativo."
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_current_user_from_reset_token_sucesso():
+    token = create_reset_token(user_id=1)
+    fake_user = MagicMock(spec=User)
+    fake_user.id = 1
+    fake_user.is_active = True
+
+    mock_db = AsyncMock()
+    mock_db.get.return_value = fake_user
+
+    app.dependency_overrides[get_session] = lambda: mock_db
+
+    try:
+        response = client.get(
+            "/test/reset-protected",
+            params={"token": token},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["user_id"] == 1
     finally:
         app.dependency_overrides.clear()
