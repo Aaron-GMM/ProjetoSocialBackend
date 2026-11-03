@@ -11,6 +11,26 @@ from src.domain.models.endereco import Enderecos
 from src.domain.models.eventos_placa import EventosPlaca
 from src.domain.models.municipio import Municipio
 from src.domain.models.placa import Placa
+from src.infrastructure.database.functions.evento import (
+    create_evento,
+    get_evento_by_id,
+    list_eventos_by_placa,
+    list_eventos_placa,
+    update_evento,
+)
+
+__all__ = [
+    "create_evento",
+    "create_placa",
+    "get_evento_by_id",
+    "get_municipio_by_codigo_ibge",
+    "get_placa_by_id",
+    "list_eventos_by_placa",
+    "list_eventos_placa",
+    "list_placas",
+    "save_placa_changes",
+    "update_evento",
+]
 
 
 async def get_municipio_by_codigo_ibge(
@@ -44,18 +64,6 @@ async def create_placa(
             await db.refresh(instance)
 
         return placa
-    except Exception:
-        await db.rollback()
-        raise
-
-
-async def create_evento(db: AsyncSession, evento: EventosPlaca) -> EventosPlaca:
-    """Insere um novo evento (Append-Only) na linha do tempo da placa."""
-    try:
-        db.add(evento)
-        await db.commit()
-        await db.refresh(evento)
-        return evento
     except Exception:
         await db.rollback()
         raise
@@ -175,23 +183,3 @@ async def get_placa_by_id(db: AsyncSession, placa_id: UUID) -> Any | None:
     stmt, _ = _build_base_placa_query()
     result = await db.exec(stmt.where(Placa.id == placa_id))
     return result.first()
-
-
-async def list_eventos_placa(
-    db: AsyncSession, placa_id: UUID, params: PlacaQueryParams
-) -> tuple[int, list[EventosPlaca]]:
-    """Lista eventos de uma placa específica paginados."""
-    stmt = (
-        select(EventosPlaca)
-        .where(EventosPlaca.placa_id == placa_id)
-        .order_by(EventosPlaca.timestamp.desc())
-    )
-
-    count_stmt = select(func.count()).select_from(stmt.subquery())
-    total = (await db.exec(count_stmt)).one()
-
-    offset = (params.page - 1) * params.page_size
-    paginated_stmt = stmt.offset(offset).limit(params.page_size)
-
-    result = await db.exec(paginated_stmt)
-    return total, list(result.all())
