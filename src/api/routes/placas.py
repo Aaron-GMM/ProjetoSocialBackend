@@ -385,3 +385,37 @@ async def update_placa(
 
     updated_row = await placa_functions.get_placa_by_id(db, placa_id)
     return (await _serialize_placa_rows([updated_row]))[0]
+
+
+@router.delete(
+    "/{placa_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Exclui logicamente uma placa",
+    description=(
+        "Desativa uma placa inserindo um evento `DELECAO` na tabela "
+        "`eventos_placa` (Append-Only).\n\n"
+        "**Regras de Negócio:**\n"
+        "- Requer usuário autenticado (Agente ou Administrador).\n"
+        "- Preserva o histórico físico no banco de dados.\n"
+        "- Oculta a placa das listagens e buscas padrões."
+    ),
+)
+async def delete_placa(
+    placa_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> None:
+    row = await _get_placa_row_or_404(db, placa_id)
+
+    evento_delecao = EventosPlaca(
+        placa_id=placa_id,
+        created_by=current_user.id,
+        tipo_evento=TipoEvento.DELECAO,
+        estado_conservacao=row.ev_estado_conservacao,
+        estado_pelicula=row.ev_estado_pelicula,
+        estado_substrato=row.ev_estado_substrato,
+        estado_suporte=row.ev_estado_suporte,
+        foto_url=row.ev_foto_url,
+        observacao="Placa excluída logicamente do sistema.",
+    )
+    await placa_functions.create_evento(db, evento_delecao)

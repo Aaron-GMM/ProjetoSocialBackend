@@ -81,6 +81,11 @@ class EventosPlaca(SQLModel, table=True):
         nullable=True,
         description="Observação sobre o evento",
     )
+    is_active: bool = Field(
+        default=True,
+        nullable=False,
+        description="Indica se o evento está ativo (exclusão lógica)",
+    )
     timestamp: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
         sa_column=Column(
