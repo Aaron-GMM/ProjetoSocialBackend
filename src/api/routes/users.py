@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from sqlmodel import update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.api.deps import get_current_user, require_admin
@@ -11,6 +12,7 @@ from src.application.schemas.user_schema import (
     UserUpdateMe,
 )
 from src.core.security import generate_random_password, get_password_hash
+from src.domain.models.refresh_token import RefreshToken
 from src.domain.models.user import User
 from src.infrastructure.database.connection import get_session
 from src.infrastructure.database.functions import user as user_functions
@@ -185,5 +187,14 @@ async def update_user(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Erro ao atualizar usuário."
         )
+
+    if user_update.is_active is False:
+        await db.exec(
+            update(RefreshToken)
+            .where(RefreshToken.user_id == user_id)
+            .values(revoked=True)
+        )
+        await db.commit()
+        await db.refresh(updated_user)
 
     return updated_user

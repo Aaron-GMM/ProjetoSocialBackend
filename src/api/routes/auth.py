@@ -225,7 +225,7 @@ async def forgot_password(
         email=request.email,
     )
 
-    if user:
+    if user and user.is_active:
         reset_token = create_reset_token(user_id=user.id)
         reset_link = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
 

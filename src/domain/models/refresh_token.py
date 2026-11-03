@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlmodel import Field, SQLModel
+from sqlmodel import Column, DateTime, Field, SQLModel
 
 
 def utc_now() -> datetime:
@@ -15,6 +15,11 @@ class RefreshToken(SQLModel, table=True):
     user_id: int = Field(
         foreign_key="users.id", index=True, nullable=False, ondelete="CASCADE"
     )
-    expires_at: datetime = Field(nullable=False)
+    expires_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
     revoked: bool = Field(default=False, nullable=False)
-    created_at: datetime = Field(default_factory=utc_now, nullable=False)
+    created_at: datetime = Field(
+        default_factory=utc_now,
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )

@@ -113,6 +113,27 @@ def test_login_usuario_sem_hash_retorna_401():
         assert response.json()["detail"] == "E-mail ou senha incorretos."
 
 
+def test_login_usuario_inativo_retorna_401():
+    fake_user = MagicMock()
+    fake_user.id = 4
+    fake_user.role = Role.AGENTE
+    fake_user.password_hash = get_password_hash("senha_valida")
+    fake_user.is_active = False
+
+    with patch(
+        "src.api.routes.auth.get_user_by_email_case_insensitive",
+        new_callable=AsyncMock,
+        return_value=fake_user,
+    ):
+        response = client.post(
+            "/auth/login",
+            data={"username": "usuario_inativo@teste.com", "password": "senha_valida"},
+        )
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == "E-mail ou senha incorretos."
+
+
 GENERIC_MESSAGE = (
     "Se o e-mail estiver cadastrado, você receberá em instantes um link "
     "para redefinir sua senha."
@@ -207,6 +228,34 @@ def test_forgot_password_email_invalido_retorna_422():
     response = client.post("/auth/forgot-password", json={"email": "email-invalido"})
 
     assert response.status_code == 422
+
+
+def test_forgot_password_usuario_inativo_nao_envia_email_e_retorna_200():
+    fake_user = MagicMock()
+    fake_user.id = 8
+    fake_user.email = "inativo@teste.com"
+    fake_user.nome = "Usuário Inativo"
+    fake_user.is_active = False
+
+    with (
+        patch(
+            "src.api.routes.auth.get_user_by_email_case_insensitive",
+            new_callable=AsyncMock,
+            return_value=fake_user,
+        ),
+        patch("src.api.routes.auth.create_reset_token") as mock_create_token,
+        patch(
+            "src.api.routes.auth.send_email", new_callable=AsyncMock
+        ) as mock_send_email,
+    ):
+        response = client.post(
+            "/auth/forgot-password", json={"email": "inativo@teste.com"}
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": GENERIC_MESSAGE}
+    mock_create_token.assert_not_called()
+    mock_send_email.assert_not_awaited()
 
 
 def test_reset_password_com_token_valido_atualiza_senha():
