@@ -94,9 +94,7 @@ async def test_update_user_as_admin(
     rf = RefreshToken(
         token_hash=hash_token("token_agente_para_revogar"),
         user_id=agent_id,
-        expires_at=(datetime.now(timezone.utc) + timedelta(days=7)).replace(
-            tzinfo=None
-        ),
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
         revoked=False,
     )
     db_session.add(rf)

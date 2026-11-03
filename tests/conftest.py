@@ -8,6 +8,7 @@ import src.domain.models.endereco  # noqa: F401
 import src.domain.models.eventos_placa  # noqa: F401
 import src.domain.models.municipio  # noqa: F401
 import src.domain.models.placa  # noqa: F401
+import src.domain.models.refresh_token  # noqa: F401
 import src.domain.models.user  # noqa: F401
 from src.core.config import settings
 
