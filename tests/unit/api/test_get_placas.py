@@ -118,9 +118,11 @@ async def cadastrar_placa(
     bairro: str = "Centro",
     logradouro: str = "Rua Basílio Pinto",
     estado_conservacao: str = "BOM",
+    codigo_contran: str = "R-1",
 ) -> dict:
     data = {
         **FORM_DATA,
+        "codigo_contran": codigo_contran,
         "latitude": str(latitude),
         "longitude": str(longitude),
         "bairro": bairro,
@@ -326,3 +328,111 @@ async def test_get_placas_tipos_catalogo(client: AsyncClient):
     assert "A-18" in codigos
     r1_item = next(item for item in data if item["codigo"] == "R-1")
     assert "PARE" in r1_item["descricao"]
+
+
+@pytest.mark.asyncio
+async def test_get_placas_filtro_busca_geral_search(
+    client: AsyncClient, quixada, agent_headers
+):
+    files = {"foto": ("placa.jpg", FAKE_JPEG_BYTES, "image/jpeg")}
+
+    # Placa 1: R-1 (Parada Obrigatória PARE), Centro, Rua Basílio Pinto
+    p_r1 = await cadastrar_placa(
+        client,
+        agent_headers,
+        codigo_contran="R-1",
+        bairro="Centro",
+        logradouro="Rua Basílio Pinto",
+    )
+
+    # Placa 2: A-18 (Saliência ou Lombada), Campo Novo, Avenida Plácido Castelo
+    res_a18 = await client.post(
+        "/placas/",
+        data={
+            **FORM_DATA,
+            "codigo_contran": "A-18",
+            "bairro": "Campo Novo",
+            "logradouro": "Avenida Plácido Castelo",
+            "latitude": "-4.9720",
+        },
+        files=files,
+        headers=agent_headers,
+    )
+    assert res_a18.status_code == 201
+    p_a18 = res_a18.json()
+
+    # Placa 3: R-2 (Dê a Preferência), SEM ENDEREÇO
+    form_sem_end = {
+        k: v
+        for k, v in FORM_DATA.items()
+        if k not in ("logradouro", "bairro", "cep", "referencia")
+    }
+    form_sem_end["codigo_contran"] = "R-2"
+    form_sem_end["latitude"] = "-4.9730"
+    res_r2 = await client.post(
+        "/placas/",
+        data=form_sem_end,
+        files=files,
+        headers=agent_headers,
+    )
+    assert res_r2.status_code == 201
+    p_r2 = res_r2.json()
+
+    # 1. Busca por Rua (logradouro)
+    res_rua = await client.get("/placas/", params={"search": "Basílio"})
+    assert res_rua.status_code == 200
+    ids_rua = [i["id"] for i in res_rua.json()["items"]]
+    assert p_r1["id"] in ids_rua
+    assert p_a18["id"] not in ids_rua
+
+    # 2. Busca por Bairro
+    res_bairro = await client.get("/placas/", params={"search": "Campo Novo"})
+    assert res_bairro.status_code == 200
+    ids_bairro = [i["id"] for i in res_bairro.json()["items"]]
+    assert p_a18["id"] in ids_bairro
+    assert p_r1["id"] not in ids_bairro
+
+    # 3. Busca por Descrição CONTRAN ('pare')
+    res_pare = await client.get("/placas/", params={"search": "pare"})
+    assert res_pare.status_code == 200
+    ids_pare = [i["id"] for i in res_pare.json()["items"]]
+    assert p_r1["id"] in ids_pare
+    assert p_a18["id"] not in ids_pare
+
+    # 4. Busca por Descrição CONTRAN ('lombada')
+    res_lombada = await client.get("/placas/", params={"search": "lombada"})
+    assert res_lombada.status_code == 200
+    ids_lombada = [i["id"] for i in res_lombada.json()["items"]]
+    assert p_a18["id"] in ids_lombada
+    assert p_r1["id"] not in ids_lombada
+
+    # 5. Busca por Código com alias sem hífen ('R1')
+    res_r1_alias = await client.get("/placas/", params={"search": "R1"})
+    assert res_r1_alias.status_code == 200
+    ids_r1 = [i["id"] for i in res_r1_alias.json()["items"]]
+    assert p_r1["id"] in ids_r1
+
+    # 6. Busca por Código exato ('A-18')
+    res_code = await client.get("/placas/", params={"search": "A-18"})
+    assert res_code.status_code == 200
+    ids_code = [i["id"] for i in res_code.json()["items"]]
+    assert p_a18["id"] in ids_code
+
+    # 7. Busca com alias em português ('busca')
+    res_busca = await client.get("/placas/", params={"busca": "Centro"})
+    assert res_busca.status_code == 200
+    ids_busca = [i["id"] for i in res_busca.json()["items"]]
+    assert p_r1["id"] in ids_busca
+
+    # 8. Busca em placa sem endereço via código CONTRAN
+    res_sem_end = await client.get("/placas/", params={"search": "R-2"})
+    assert res_sem_end.status_code == 200
+    ids_sem_end = [i["id"] for i in res_sem_end.json()["items"]]
+    assert p_r2["id"] in ids_sem_end
+
+    # 9. Busca por termo inexistente
+    res_inexistente = await client.get(
+        "/placas/", params={"search": "InexistenteXYZ123"}
+    )
+    assert res_inexistente.status_code == 200
+    assert len(res_inexistente.json()["items"]) == 0

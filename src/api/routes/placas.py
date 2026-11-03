@@ -282,13 +282,17 @@ async def list_tipos_placas() -> list[PlacaTipoItem]:
     "/",
     response_model=PlacaListResponse,
     status_code=status.HTTP_200_OK,
-    summary="Lista placas paginadas com filtros de endereço e conservação",
+    summary="Lista placas paginadas com filtros de busca geral, endereço e conservação",
     description=(
         "Recupera uma lista paginada de placas unificando Endereço "
         "e o último EventoPlaca.\n\n"
         "**Recursos e Filtros:**\n"
         "- Paginação (`page`, `page_size`).\n"
-        "- Filtros parciais por `bairro` e `logradouro` (case-insensitive).\n"
+        "- Busca textual geral (`search` ou `busca`): filtra simultaneamente por "
+        "rua/logradouro, bairro ou tipo/código da placa "
+        "(ex: 'R-1', 'R1', 'PARE', 'Centro').\n"
+        "- Filtro específico por `codigo_contran` (código oficial ou nome CONTRAN).\n"
+        "- Filtros específicos por `bairro` e `logradouro` (case-insensitive).\n"
         "- Filtro por `estado_conservacao` atual da placa."
     ),
     response_description="Lista paginada de placas com endereço e último evento.",
