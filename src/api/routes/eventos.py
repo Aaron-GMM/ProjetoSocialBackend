@@ -279,3 +279,50 @@ async def update_evento_placa(
     if evento_response.foto_url:
         evento_response.foto_url = storage.get_public_url(evento_response.foto_url)
     return evento_response
+
+
+@router.delete(
+    "/eventos/{evento_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Exclui logicamente um relatório/evento específico de uma placa (HU-B6)",
+    description=(
+        "Marca um relatório específico como inativo (`is_active = False`), "
+        "fazendo a placa retornar ao estado do evento válido anterior.\n\n"
+        "**Regras de Negócio:**\n"
+        "- Um `AGENTE` só pode excluir eventos criados por ele mesmo "
+        "(`created_by == current_user.id`).\n"
+        "- Um `ADMINISTRADOR` pode excluir eventos de qualquer agente.\n"
+        "- Não permite excluir o evento inicial (`CRIACAO`) caso seja o único "
+        "evento ativo da placa."
+    ),
+)
+async def delete_evento_placa(
+    placa_id: UUID,
+    evento_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> None:
+    await _get_placa_row_or_404(db, placa_id)
+    evento = await _get_evento_or_404(db, evento_id, placa_id)
+
+    if current_user.role != Role.ADMINISTRADOR and evento.created_by != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Você não tem permissão para excluir um evento criado por outro agente."
+            ),
+        )
+
+    if evento.tipo_evento == TipoEvento.CRIACAO:
+        total_ativos = await evento_functions.count_active_eventos_placa(db, placa_id)
+        if total_ativos <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Não é permitido excluir o evento inicial de criação quando "
+                    "for o único evento da placa. Para remover a placa inteira, "
+                    "utilize DELETE /placas/{placa_id}."
+                ),
+            )
+
+    await evento_functions.soft_delete_evento(db, evento)

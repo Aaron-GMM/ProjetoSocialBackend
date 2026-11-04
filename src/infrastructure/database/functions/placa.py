@@ -6,29 +6,35 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.application.schemas.placa_schema import PlacaQueryParams
-from src.domain.enums.placa_enums import resolve_codigo_contran_filter
+from src.domain.enums.placa_enums import TipoEvento, resolve_codigo_contran_filter
 from src.domain.models.endereco import Enderecos
 from src.domain.models.eventos_placa import EventosPlaca
 from src.domain.models.municipio import Municipio
 from src.domain.models.placa import Placa
 from src.infrastructure.database.functions.evento import (
+    count_active_eventos_placa,
     create_evento,
     get_evento_by_id,
+    get_evento_placa_by_id,
     list_eventos_by_placa,
     list_eventos_placa,
+    soft_delete_evento,
     update_evento,
 )
 
 __all__ = [
+    "count_active_eventos_placa",
     "create_evento",
     "create_placa",
     "get_evento_by_id",
+    "get_evento_placa_by_id",
     "get_municipio_by_codigo_ibge",
     "get_placa_by_id",
     "list_eventos_by_placa",
     "list_eventos_placa",
     "list_placas",
     "save_placa_changes",
+    "soft_delete_evento",
     "update_evento",
 ]
 
@@ -94,7 +100,10 @@ def _build_base_placa_query():
             EventosPlaca.observacao.label("ev_observacao"),
             EventosPlaca.timestamp.label("ev_timestamp"),
         )
-        .where(EventosPlaca.placa_id == Placa.id)
+        .where(
+            EventosPlaca.placa_id == Placa.id,
+            EventosPlaca.is_active.is_(True),
+        )
         .order_by(EventosPlaca.timestamp.desc())
         .limit(1)
         .correlate(Placa)
@@ -112,6 +121,12 @@ def _build_base_placa_query():
         )
         .outerjoin(Enderecos, Placa.id == Enderecos.placa_id)
         .outerjoin(ultimo_evento_sub, true())
+        .where(
+            or_(
+                ultimo_evento_sub.c.ev_tipo_evento.is_(None),
+                ultimo_evento_sub.c.ev_tipo_evento != TipoEvento.DELECAO,
+            )
+        )
     )
     return stmt, ultimo_evento_sub
 
