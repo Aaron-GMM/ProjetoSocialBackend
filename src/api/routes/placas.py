@@ -17,7 +17,14 @@ from src.application.schemas.placa_schema import (
     PlacaTipoItem,
     PlacaUpdate,
 )
-from src.domain.enums.placa_enums import CONTRAN_DESCRICOES, TipoEvento
+from src.domain.enums.placa_enums import (
+    CONTRAN_DESCRICOES,
+    ESTADO_CONSERVACAO_DESCRICOES,
+    TIPO_PELICULA_DESCRICOES,
+    TIPO_SUBSTRATO_DESCRICOES,
+    TIPO_SUPORTE_DESCRICOES,
+    TipoEvento,
+)
 from src.domain.models.endereco import Enderecos
 from src.domain.models.eventos_placa import EventosPlaca
 from src.domain.models.placa import Placa
@@ -270,12 +277,78 @@ async def create_placa(
         "Retorna a lista de todos os códigos CONTRAN e suas descrições para filtros."
     ),
 )
-async def list_tipos_placas(
-    current_user: Annotated[User, Depends(get_current_user)],
-) -> list[PlacaTipoItem]:
+async def list_tipos_placas() -> list[PlacaTipoItem]:
     return [
         PlacaTipoItem(codigo=codigo, descricao=descricao)
         for codigo, descricao in CONTRAN_DESCRICOES.items()
+    ]
+
+
+@router.get(
+    "/tipos-pelicula",
+    response_model=list[PlacaTipoItem],
+    status_code=status.HTTP_200_OK,
+    summary="Catálogo de tipos de película da placa",
+    description=(
+        "Retorna a lista de códigos e descrições dos tipos de película "
+        "retrorrefletiva (`TipoPelicula`) para preenchimento de seletores e filtros."
+    ),
+)
+async def list_tipos_pelicula() -> list[PlacaTipoItem]:
+    return [
+        PlacaTipoItem(codigo=codigo, descricao=descricao)
+        for codigo, descricao in TIPO_PELICULA_DESCRICOES.items()
+    ]
+
+
+@router.get(
+    "/tipos-substrato",
+    response_model=list[PlacaTipoItem],
+    status_code=status.HTTP_200_OK,
+    summary="Catálogo de tipos de substrato da placa",
+    description=(
+        "Retorna a lista de códigos e descrições dos materiais de substrato "
+        "da placa (`TipoSubstrato`) para preenchimento de seletores e filtros."
+    ),
+)
+async def list_tipos_substrato() -> list[PlacaTipoItem]:
+    return [
+        PlacaTipoItem(codigo=codigo, descricao=descricao)
+        for codigo, descricao in TIPO_SUBSTRATO_DESCRICOES.items()
+    ]
+
+
+@router.get(
+    "/tipos-suporte",
+    response_model=list[PlacaTipoItem],
+    status_code=status.HTTP_200_OK,
+    summary="Catálogo de tipos de suporte de fixação da placa",
+    description=(
+        "Retorna a lista de códigos e descrições dos tipos de suporte "
+        "da placa (`TipoSuporte`) para preenchimento de seletores e filtros."
+    ),
+)
+async def list_tipos_suporte() -> list[PlacaTipoItem]:
+    return [
+        PlacaTipoItem(codigo=codigo, descricao=descricao)
+        for codigo, descricao in TIPO_SUPORTE_DESCRICOES.items()
+    ]
+
+
+@router.get(
+    "/estados-conservacao",
+    response_model=list[PlacaTipoItem],
+    status_code=status.HTTP_200_OK,
+    summary="Catálogo de estados de conservação",
+    description=(
+        "Retorna a lista de códigos e descrições dos estados de conservação "
+        "(`EstadoConservacao`) da placa e de seus componentes."
+    ),
+)
+async def list_estados_conservacao() -> list[PlacaTipoItem]:
+    return [
+        PlacaTipoItem(codigo=codigo, descricao=descricao)
+        for codigo, descricao in ESTADO_CONSERVACAO_DESCRICOES.items()
     ]
 
 

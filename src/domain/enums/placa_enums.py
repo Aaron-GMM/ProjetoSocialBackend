@@ -192,6 +192,17 @@ class TipoPelicula(str, Enum):
     OUTRO = "OUTRO"
 
 
+TIPO_PELICULA_DESCRICOES: dict[str, str] = {
+    TipoPelicula.TIPO_I.value: "Tipo I",
+    TipoPelicula.TIPO_II.value: "Tipo II",
+    TipoPelicula.TIPO_III.value: "Tipo III",
+    TipoPelicula.TIPO_IV.value: "Tipo IV",
+    TipoPelicula.TIPO_X.value: "Tipo X",
+    TipoPelicula.NAO_REFLETIVA.value: "Não Refletiva",
+    TipoPelicula.OUTRO.value: "Outro",
+}
+
+
 class TipoSubstrato(str, Enum):
     """Materiais do substrato da placa."""
 
@@ -201,6 +212,16 @@ class TipoSubstrato(str, Enum):
     FIBRA = "FIBRA"
     PLASTICO = "PLASTICO"
     OUTRO = "OUTRO"
+
+
+TIPO_SUBSTRATO_DESCRICOES: dict[str, str] = {
+    TipoSubstrato.ACO.value: "Aço",
+    TipoSubstrato.ALUMINIO.value: "Alumínio",
+    TipoSubstrato.MADEIRA.value: "Madeira",
+    TipoSubstrato.FIBRA.value: "Fibra",
+    TipoSubstrato.PLASTICO.value: "Plástico",
+    TipoSubstrato.OUTRO.value: "Outro",
+}
 
 
 class TipoSuporte(str, Enum):
@@ -213,6 +234,17 @@ class TipoSuporte(str, Enum):
     COLUNA_SEMAFORICA = "COLUNA_SEMAFORICA"
     PAREDE_MURO = "PAREDE_MURO"
     OUTRO = "OUTRO"
+
+
+TIPO_SUPORTE_DESCRICOES: dict[str, str] = {
+    TipoSuporte.POSTE_ACO.value: "Poste de Aço",
+    TipoSuporte.POSTE_MADEIRA.value: "Poste de Madeira",
+    TipoSuporte.POSTE_CONCRETO.value: "Poste de Concreto",
+    TipoSuporte.PORTICO.value: "Pórtico",
+    TipoSuporte.COLUNA_SEMAFORICA.value: "Coluna Semafórica",
+    TipoSuporte.PAREDE_MURO.value: "Parede / Muro",
+    TipoSuporte.OUTRO.value: "Outro",
+}
 
 
 class TipoEvento(str, Enum):
@@ -229,3 +261,10 @@ class EstadoConservacao(str, Enum):
     BOM = "BOM"
     REGULAR = "REGULAR"
     RUIM = "RUIM"
+
+
+ESTADO_CONSERVACAO_DESCRICOES: dict[str, str] = {
+    EstadoConservacao.BOM.value: "Bom",
+    EstadoConservacao.REGULAR.value: "Regular",
+    EstadoConservacao.RUIM.value: "Ruim",
+}

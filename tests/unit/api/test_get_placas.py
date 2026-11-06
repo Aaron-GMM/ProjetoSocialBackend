@@ -474,3 +474,33 @@ async def test_get_placas_filtro_busca_geral_search(
     )
     assert res_inexistente.status_code == 200
     assert len(res_inexistente.json()["items"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_placas_enums_endpoints(client: AsyncClient):
+    res_pelicula = await client.get("/placas/tipos-pelicula")
+    assert res_pelicula.status_code == 200
+    pelicula_items = res_pelicula.json()
+    assert {"codigo": "TIPO_I", "descricao": "Tipo I"} in pelicula_items
+    assert {"codigo": "NAO_REFLETIVA", "descricao": "Não Refletiva"} in pelicula_items
+
+    res_substrato = await client.get("/placas/tipos-substrato")
+    assert res_substrato.status_code == 200
+    substrato_items = res_substrato.json()
+    assert {"codigo": "ACO", "descricao": "Aço"} in substrato_items
+    assert {"codigo": "ALUMINIO", "descricao": "Alumínio"} in substrato_items
+
+    res_suporte = await client.get("/placas/tipos-suporte")
+    assert res_suporte.status_code == 200
+    suporte_items = res_suporte.json()
+    assert {"codigo": "POSTE_ACO", "descricao": "Poste de Aço"} in suporte_items
+    assert {"codigo": "PAREDE_MURO", "descricao": "Parede / Muro"} in suporte_items
+
+    res_conservacao = await client.get("/placas/estados-conservacao")
+    assert res_conservacao.status_code == 200
+    conservacao_items = res_conservacao.json()
+    assert conservacao_items == [
+        {"codigo": "BOM", "descricao": "Bom"},
+        {"codigo": "REGULAR", "descricao": "Regular"},
+        {"codigo": "RUIM", "descricao": "Ruim"},
+    ]
