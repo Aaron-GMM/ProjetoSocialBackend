@@ -9,6 +9,8 @@ from sqlmodel import Field, SQLModel
 class Municipio(SQLModel, table=True):
     __tablename__ = "municipios"
 
+    model_config = {"arbitrary_types_allowed": True}
+
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     nome: str = Field(index=True, unique=True)
     codigo_ibge: str = Field(index=True, unique=True)

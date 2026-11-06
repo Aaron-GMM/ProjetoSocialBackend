@@ -1,7 +1,8 @@
+import hashlib
 import secrets
 import string
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from typing import Any
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -12,6 +13,7 @@ SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 RESET_TOKEN_EXPIRE_MINUTES = settings.RESET_TOKEN_EXPIRE_MINUTES
+REFRESH_TOKEN_EXPIRE_DAYS = getattr(settings, "REFRESH_TOKEN_EXPIRE_DAYS", 30)
 
 ACCESS_TOKEN_TYPE = "access"
 PASSWORD_RESET_TOKEN_TYPE = "password_reset"
@@ -30,7 +32,7 @@ def get_password_hash(password: str) -> str:
 
 
 def _create_token(
-    data: Dict[str, Any],
+    data: dict[str, Any],
     token_type: str,
     expires_delta: timedelta,
 ) -> str:
@@ -44,7 +46,7 @@ def _create_token(
 
 
 def create_access_token(
-    data: Dict[str, Any], expires_delta: Optional[timedelta] = None
+    data: dict[str, Any], expires_delta: timedelta | None = None
 ) -> str:
     """Gera um JWT destinado exclusivamente à autenticação da API."""
     if expires_delta is None:
@@ -73,7 +75,7 @@ def create_reset_token(user_id: int) -> str:
     return _create_token(data, PASSWORD_RESET_TOKEN_TYPE, expires_delta)
 
 
-def validate_access_token(token: str) -> Optional[int]:
+def validate_access_token(token: str) -> int | None:
     """Valida um token de acesso e retorna o ID do usuário associado."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -89,7 +91,7 @@ def validate_access_token(token: str) -> Optional[int]:
         return None
 
 
-def validate_reset_token(token: str) -> Optional[int]:
+def validate_reset_token(token: str) -> int | None:
     """Valida um token de redefinição e retorna o ID do usuário.
 
     Retorna ``None`` para tokens inválidos, expirados ou que não foram
@@ -107,3 +109,13 @@ def validate_reset_token(token: str) -> Optional[int]:
         return int(user_id)
     except (JWTError, TypeError, ValueError):
         return None
+
+
+def generate_refresh_token_string() -> str:
+    """Gera uma string aleatória criptograficamente segura para o refresh token."""
+    return secrets.token_urlsafe(64)
+
+
+def hash_token(token: str) -> str:
+    """Gera o hash SHA-256 de um token para persistência segura no banco."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
