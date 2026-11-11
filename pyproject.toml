@@ -23,6 +23,7 @@ dependencies = [
     "greenlet>=3.5.5",
     "fastapi-mail>=1.4.2",
     "minio>=7.2.0",
+    "httpx>=0.28.0",
 ]
 
 [project.optional-dependencies]
