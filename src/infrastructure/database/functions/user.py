@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from sqlmodel import func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -23,6 +25,8 @@ async def get_user_by_id(db: AsyncSession, user_id: int) -> User | None:
 
 async def create_user(db: AsyncSession, user: User) -> User:
     """Insere um novo usuário no banco."""
+    user.created_at = datetime.now(timezone.utc)
+
     db.add(user)
     await db.commit()
     await db.refresh(user)
