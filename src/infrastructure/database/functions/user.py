@@ -1,5 +1,4 @@
-from datetime import datetime
-from time import timezone
+from datetime import datetime, timezone
 
 from sqlmodel import func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
