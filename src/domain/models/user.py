@@ -1,4 +1,5 @@
 from datetime import datetime
+
 from sqlmodel import Field, Relationship, SQLModel
 
 from src.domain.models.eventos_placa import EventosPlaca

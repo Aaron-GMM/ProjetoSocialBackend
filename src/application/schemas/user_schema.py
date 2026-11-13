@@ -1,4 +1,5 @@
 from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from src.domain.enums.role import Role
