@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from src.domain.enums.role import Role
@@ -19,6 +20,7 @@ class UserResponse(BaseModel):
     is_active: bool = Field(
         ..., description="Informa se a conta está ativa", examples=[True]
     )
+    created_at: datetime = Field(..., description="Data de criação", examples=["2025-10-15T10:30:00"])
 
     model_config = ConfigDict(from_attributes=True)
 
