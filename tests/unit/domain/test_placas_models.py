@@ -95,7 +95,7 @@ async def test_persistencia_multiplas_placas_mesmo_codigo_contran_e_relacionamen
         email="agente.placas@quixada.ce.gov.br",
         password_hash="hash123",
         role=Role.AGENTE,
-        created_at=datetime.now()
+        created_at=datetime.now(),
     )
     db_session.add(agente)
     await db_session.commit()
