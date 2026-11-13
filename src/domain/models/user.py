@@ -39,4 +39,4 @@ class User(SQLModel, table=True):
     )
 
     eventos_criados: list[EventosPlaca] = Relationship(back_populates="created_by_user")
-    created_at: datetime = Field(nullable=False)
+    created_at: datetime = Field(nullable=False, default_factory=datetime.now)
