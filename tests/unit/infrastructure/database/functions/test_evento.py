@@ -1,3 +1,4 @@
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -19,6 +20,7 @@ async def test_evento_crud_and_list(db_session: AsyncSession):
         nome="Agente Teste",
         email="agente.evento@example.com",
         password_hash="hashed_password",
+        created_at=datetime.now(),
     )
     db_session.add(user)
     await db_session.commit()
