@@ -3,6 +3,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.api.deps import get_current_user
@@ -36,6 +37,29 @@ router = APIRouter(
     prefix="/placas/{placa_id}",
     tags=["Eventos/Relatórios das Placas"],
 )
+
+
+async def _map_evento_to_response(
+    db: AsyncSession, evento: EventosPlaca
+) -> EventoPlacaResponse:
+    """Mapeia um EventosPlaca para EventoPlacaResponse com o nome do criador."""
+    # Buscar o nome do usuário que criou o evento
+    user_stmt = select(User.nome).where(User.id == evento.created_by)
+    user_result = await db.exec(user_stmt)
+    created_by_name = user_result.first()
+
+    return EventoPlacaResponse(
+        id=evento.id,
+        created_by=created_by_name,
+        tipo_evento=evento.tipo_evento,
+        estado_conservacao=evento.estado_conservacao,
+        estado_pelicula=evento.estado_pelicula,
+        estado_substrato=evento.estado_substrato,
+        estado_suporte=evento.estado_suporte,
+        foto_url=evento.foto_url,
+        observacao=evento.observacao,
+        timestamp=evento.timestamp,
+    )
 
 
 def _resolve_minio_service() -> Any:
@@ -160,7 +184,7 @@ async def create_vistoria(
             await storage.delete_file_async(object_name)
         raise
 
-    evento_response = EventoPlacaResponse.model_validate(evento)
+    evento_response = await _map_evento_to_response(db, evento)
     evento_response.foto_url = storage.get_public_url(object_name)
     return evento_response
 
@@ -189,7 +213,7 @@ async def list_eventos_placa(
     total, rows = await evento_functions.list_eventos_placa(session, placa_id, params)
     items: list[EventoPlacaResponse] = []
     for row in rows:
-        item = EventoPlacaResponse.model_validate(row)
+        item = await _map_evento_to_response(session, row)
         if item.foto_url:
             item.foto_url = storage.get_public_url(item.foto_url)
         items.append(item)
@@ -275,7 +299,7 @@ async def update_evento_placa(
         with suppress(StorageError):
             await storage.delete_file_async(old_object_name)
 
-    evento_response = EventoPlacaResponse.model_validate(evento)
+    evento_response = await _map_evento_to_response(db, evento)
     if evento_response.foto_url:
         evento_response.foto_url = storage.get_public_url(evento_response.foto_url)
     return evento_response

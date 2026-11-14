@@ -325,7 +325,6 @@ async def test_delete_evento_by_other_agent_forbidden_403(
 async def test_delete_evento_by_admin_success(
     client: AsyncClient, db_session, created_placa
 ):
-    agent_id = created_placa["ultimo_evento"]["created_by"]
     admin_user = await create_user(
         db_session,
         User(
@@ -335,16 +334,27 @@ async def test_delete_evento_by_admin_success(
             role=Role.ADMINISTRADOR,
         ),
     )
+
     admin_headers = {
         "Authorization": f"Bearer {create_access_token({'sub': str(admin_user.id)})}"
     }
+
+    agent_user = await create_user(
+        db_session,
+        User(
+            nome="Agente",
+            email="agent@test.com",
+            password_hash="hashedpass2",
+            role=Role.AGENTE,
+        ),
+    )
 
     placa_id = created_placa["id"]
     vistoria_uuid = uuid4()
     vistoria = EventosPlaca(
         id=vistoria_uuid,
         placa_id=UUID(placa_id),
-        created_by=agent_id,
+        created_by=agent_user.id,
         tipo_evento=TipoEvento.VISTORIA,
         estado_conservacao=EstadoConservacao.RUIM,
         timestamp=datetime.now(UTC) + timedelta(minutes=5),

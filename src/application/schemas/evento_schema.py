@@ -134,7 +134,7 @@ class EventoPlacaResponse(BaseModel):
     """Schema de resposta de um evento/relatório da placa."""
 
     id: UUID
-    created_by: int
+    created_by: str
     tipo_evento: TipoEvento
     estado_conservacao: EstadoConservacao
     estado_pelicula: EstadoConservacao | None
