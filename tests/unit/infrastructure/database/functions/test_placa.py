@@ -1,5 +1,3 @@
-from datetime import datetime
-
 import pytest
 from sqlmodel.ext.asyncio.session import AsyncSession
 
