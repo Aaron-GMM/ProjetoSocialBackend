@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class TokenResponse(BaseModel):
@@ -43,6 +43,13 @@ class ResetPasswordRequest(BaseModel):
 
     new_password: str = Field(
         ...,
-        min_length=1,
+        min_length=5,
         description="Nova senha do usuário",
     )
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if any(c.isspace() for c in v):
+            raise ValueError("A senha não pode conter espaços.")
+        return v
