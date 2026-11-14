@@ -18,7 +18,6 @@ async def test_list_eventos_placa(db_session: AsyncSession):
         nome="Test User",
         email="test@example.com",
         password_hash="hashed_password",
-        created_at=datetime.now(),
     )
     db_session.add(user)
     await db_session.commit()
