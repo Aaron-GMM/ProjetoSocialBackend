@@ -1,5 +1,6 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
+from sqlalchemy import Column, DateTime
 from sqlmodel import Field, Relationship, SQLModel
 
 from src.domain.models.eventos_placa import EventosPlaca
@@ -39,4 +40,8 @@ class User(SQLModel, table=True):
     )
 
     eventos_criados: list[EventosPlaca] = Relationship(back_populates="created_by_user")
-    created_at: datetime = Field(nullable=False, default_factory=datetime.now)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+        description="Data de criação do usuário",
+    )
