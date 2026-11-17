@@ -4,7 +4,6 @@ import sys
 from pathlib import Path
 
 from sqlalchemy import text
-from sqlmodel.ext.asyncio.session import AsyncSession
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -24,7 +23,7 @@ async def seed_municipio_quixada():
         print(f"Erro ao ler geojson: {e}")
         return
 
-    async with AsyncSession(engine) as session:
+    async with engine.begin() as conn:
         query = text("""
             INSERT INTO municipios (id, nome, codigo_ibge, poligono)
             VALUES (gen_random_uuid(), 'Quixadá', '2311306', 
@@ -32,8 +31,7 @@ async def seed_municipio_quixada():
             ON CONFLICT (codigo_ibge) DO NOTHING;
         """)
 
-        await session.execute(query, {"geojson": geojson_data})
-        await session.commit()
+        await conn.execute(query, {"geojson": geojson_data})
         print("Seed finalizado com sucesso! Quixadá está no banco de dados.")
 
 
