@@ -33,6 +33,7 @@ from src.domain.models.placa import Placa
 from src.domain.models.user import User
 from src.infrastructure.database.connection import get_session
 from src.infrastructure.database.functions import placa as placa_functions
+from src.infrastructure.database.functions.geo_validator import is_point_in_municipio
 from src.infrastructure.services.geocoding import (
     GeocodingUnavailableError,
     lookup_address,
@@ -219,23 +220,22 @@ async def create_placa(
     file_bytes = await _read_image(foto)
     creator_nome = current_user.nome
 
-    # Validação de Quixadá desativada temporariamente para ambiente de desenvolvimento:
-    # municipio = await placa_functions.get_municipio_by_codigo_ibge(
-    #     db, QUIXADA_CODIGO_IBGE
-    # )
-    # if not municipio:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    #         detail="Município de Quixadá não cadastrado.",
-    #     )
-    # is_inside = await is_point_in_municipio(
-    #     db, placa_create.latitude, placa_create.longitude, municipio.id
-    # )
-    # if not is_inside:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_400_BAD_REQUEST,
-    #         detail="As coordenadas da placa estão fora de Quixadá!",
-    #     )
+    municipio = await placa_functions.get_municipio_by_codigo_ibge(
+        db, QUIXADA_CODIGO_IBGE
+    )
+    if not municipio:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Município de Quixadá não cadastrado.",
+        )
+    is_inside = await is_point_in_municipio(
+        db, placa_create.latitude, placa_create.longitude, municipio.id
+    )
+    if not is_inside:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="As coordenadas da placa estão fora de Quixadá!",
+        )
 
     placa = Placa(
         codigo_contran=placa_create.codigo_contran,

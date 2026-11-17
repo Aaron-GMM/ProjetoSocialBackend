@@ -37,6 +37,20 @@ async def engine():
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis;"))
         await conn.run_sync(SQLModel.metadata.drop_all)
         await conn.run_sync(SQLModel.metadata.create_all)
+        await conn.execute(
+            text(
+                "INSERT INTO municipios (id, nome, codigo_ibge, poligono) VALUES "
+                "(gen_random_uuid(), 'Quixadá', '2311306', "
+                "ST_GeomFromText(:poligono, 4326)) "
+                "ON CONFLICT (codigo_ibge) DO NOTHING;"
+            ),
+            {
+                "poligono": (
+                    "POLYGON((-39.15 -5.05, -38.90 -5.05, -38.90 -4.85, "
+                    "-39.15 -4.85, -39.15 -5.05))"
+                )
+            },
+        )
 
     yield engine
 

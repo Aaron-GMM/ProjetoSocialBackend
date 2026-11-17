@@ -117,6 +117,9 @@ jobs:
       - name: Validar Migrations
         run: alembic upgrade head
 
+      - name: Validar Seed de Quixadá
+        run: python scripts/seed_quixada.py
+
   testes:
     name: testes
     runs-on: ubuntu-latest
@@ -198,3 +201,39 @@ jobs:
             -e MINIO_SECURE="$MINIO_SECURE" \
             caca-placa-api:ci \
             python -c "from src.main import app; assert app.title == 'Caça Placa API'; print('Container e FastAPI validados com sucesso!')"
+
+  deploy:
+    name: deploy
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Deploy Automático na VM do Google Cloud
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.GCP_VM_HOST }}
+          username: ${{ secrets.GCP_VM_USER }}
+          key: ${{ secrets.GCP_VM_SSH_KEY }}
+          port: 22
+          command_timeout: 10m
+          script: |
+            set -e
+            cd ${{ secrets.GCP_PROJECT_PATH }}
+            echo " Atualizando código da branch main..."
+            git checkout main
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo " Reconstruindo e subindo containers Docker..."
+            docker compose up -d --build --remove-orphans
+
+            echo "🗄 Executando migrations do banco de dados (Alembic)..."
+            docker compose exec -T api alembic upgrade head
+
+            echo "🗺 Garantindo seed do polígono de Quixadá ..."
+            docker compose exec -T api python scripts/seed_quixada.py
+
+            echo "Limpando imagens Docker antigas não utilizadas..."
+            docker image prune -f
+
+            echo " Deploy concluído com sucesso em cacaplaca-api.duckdns.org!"
