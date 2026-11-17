@@ -224,10 +224,9 @@ async def forgot_password(
     )
 
     if user and user.is_active:
-        password_hash = getattr(user, "password_hash", None) or getattr(
-            user, "hashed_password", None
+        reset_token = create_reset_token(
+            user_id=user.id, password_hash=user.password_hash
         )
-        reset_token = create_reset_token(user_id=user.id, password_hash=password_hash)
         reset_link = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
 
         background_tasks.add_task(
