@@ -6,6 +6,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.domain.models.eventos_placa import EventosPlaca
+from src.domain.models.user import User
 
 
 async def create_evento(db: AsyncSession, evento: EventosPlaca) -> EventosPlaca:
@@ -24,14 +25,23 @@ async def get_evento_by_id(
     db: AsyncSession, evento_id: UUID, placa_id: UUID | None = None
 ) -> EventosPlaca | None:
     """Busca um evento ativo específico pelo ID e valida o vínculo com a placa."""
-    stmt = select(EventosPlaca).where(
-        EventosPlaca.id == evento_id,
-        EventosPlaca.is_active.is_(True),
+    stmt = (
+        select(EventosPlaca, User.nome.label("created_by_nome"))
+        .outerjoin(User, EventosPlaca.created_by == User.id)
+        .where(
+            EventosPlaca.id == evento_id,
+            EventosPlaca.is_active.is_(True),
+        )
     )
     if placa_id is not None:
         stmt = stmt.where(EventosPlaca.placa_id == placa_id)
     result = await db.exec(stmt)
-    return result.first()
+    row = result.first()
+    if row is None:
+        return None
+    evento, created_by_nome = row
+    object.__setattr__(evento, "created_by_nome", created_by_nome)
+    return evento
 
 
 async def get_evento_placa_by_id(
@@ -46,7 +56,8 @@ async def list_eventos_placa(
 ) -> tuple[int, list[EventosPlaca]]:
     """Lista eventos ativos de uma placa específica paginados por timestamp DESC."""
     stmt = (
-        select(EventosPlaca)
+        select(EventosPlaca, User.nome.label("created_by_nome"))
+        .outerjoin(User, EventosPlaca.created_by == User.id)
         .where(
             EventosPlaca.placa_id == placa_id,
             EventosPlaca.is_active.is_(True),
@@ -61,7 +72,11 @@ async def list_eventos_placa(
     paginated_stmt = stmt.offset(offset).limit(params.page_size)
 
     result = await db.exec(paginated_stmt)
-    return total, list(result.all())
+    items: list[EventosPlaca] = []
+    for evento, created_by_nome in result.all():
+        object.__setattr__(evento, "created_by_nome", created_by_nome)
+        items.append(evento)
+    return total, items
 
 
 list_eventos_by_placa = list_eventos_placa

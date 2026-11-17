@@ -114,7 +114,7 @@ VISTORIA_DATA = {
 async def test_create_vistoria_success(
     client: AsyncClient, db_session, agent_headers, mock_minio, placa_id
 ):
-    agent_name = (await db_session.exec(select(User.nome))).one()
+    agent_id, agent_name = (await db_session.exec(select(User.id, User.nome))).one()
     response = await client.post(
         f"/placas/{placa_id}/vistoria",
         data=VISTORIA_DATA,
@@ -129,7 +129,8 @@ async def test_create_vistoria_success(
     assert data["estado_pelicula"] == "REGULAR"
     assert data["estado_substrato"] is None
     assert data["observacao"] == "Placa pichada"
-    assert data["created_by"] == agent_name
+    assert data["created_by"] == agent_id
+    assert data["created_by_nome"] == agent_name
     assert data["foto_url"].endswith(NEW_OBJECT)
     assert await count_rows(db_session, EventosPlaca) == 2
 

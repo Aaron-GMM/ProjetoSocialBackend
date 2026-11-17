@@ -131,6 +131,7 @@ async def count_rows(db_session, model) -> int:
 async def test_create_placa_success(
     client: AsyncClient, db_session, quixada, agent_user, agent_headers, mock_minio
 ):
+    agent_id = agent_user.id
     agent_name = agent_user.nome
     response = await client.post(
         "/placas/",
@@ -147,7 +148,8 @@ async def test_create_placa_success(
     assert data["endereco"]["bairro"] == "Centro"
     assert data["ultimo_evento"]["tipo_evento"] == "CRIACAO"
     assert data["ultimo_evento"]["estado_conservacao"] == "BOM"
-    assert data["ultimo_evento"]["created_by"] == agent_name
+    assert data["ultimo_evento"]["created_by"] == agent_id
+    assert data["ultimo_evento"]["created_by_nome"] == agent_name
     assert data["ultimo_evento"]["foto_url"].startswith(
         "http://localhost:9000/cacaplaca-images/placas/2026/10/20/"
     )
@@ -172,6 +174,7 @@ async def test_create_placa_success(
 async def test_create_placa_without_endereco_success(
     client: AsyncClient, db_session, quixada, agent_user, agent_headers, mock_minio
 ):
+    agent_id = agent_user.id
     agent_name = agent_user.nome
     form_without_addr = {
         k: v
@@ -190,7 +193,8 @@ async def test_create_placa_without_endereco_success(
     assert data["codigo_contran"] == "R-1"
     assert data["endereco"] is None
     assert data["ultimo_evento"]["tipo_evento"] == "CRIACAO"
-    assert data["ultimo_evento"]["created_by"] == agent_name
+    assert data["ultimo_evento"]["created_by"] == agent_id
+    assert data["ultimo_evento"]["created_by_nome"] == agent_name
     assert await count_rows(db_session, Enderecos) == 0
     assert await count_rows(db_session, EventosPlaca) == 1
     assert await count_rows(db_session, Placa) == 1

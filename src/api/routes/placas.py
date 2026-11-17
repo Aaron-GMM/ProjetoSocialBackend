@@ -4,7 +4,6 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from geoalchemy2 import WKTElement
-from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.api.deps import get_current_user
@@ -40,29 +39,6 @@ ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 router = APIRouter(prefix="/placas", tags=["Placas"])
 
 
-async def _map_evento_to_response(
-    db: AsyncSession, evento: EventosPlaca
-) -> EventoPlacaResponse:
-    """Mapeia um EventosPlaca para EventoPlacaResponse com o nome do criador."""
-    # Buscar o nome do usuário que criou o evento
-    user_stmt = select(User.nome).where(User.id == evento.created_by)
-    user_result = await db.exec(user_stmt)
-    created_by_name = user_result.first()
-
-    return EventoPlacaResponse(
-        id=evento.id,
-        created_by=created_by_name,
-        tipo_evento=evento.tipo_evento,
-        estado_conservacao=evento.estado_conservacao,
-        estado_pelicula=evento.estado_pelicula,
-        estado_substrato=evento.estado_substrato,
-        estado_suporte=evento.estado_suporte,
-        foto_url=evento.foto_url,
-        observacao=evento.observacao,
-        timestamp=evento.timestamp,
-    )
-
-
 async def _serialize_placa_rows(rows: list[Any]) -> list[PlacaResponse]:
     """Converte as linhas retornadas pelo banco em objetos PlacaResponse."""
     items: list[PlacaResponse] = []
@@ -81,6 +57,7 @@ async def _serialize_placa_rows(rows: list[Any]) -> list[PlacaResponse]:
             evento_response = EventoPlacaResponse(
                 id=row.ev_id,
                 created_by=row.ev_created_by,
+                created_by_nome=getattr(row, "ev_created_by_nome", None),
                 tipo_evento=row.ev_tipo_evento,
                 estado_conservacao=row.ev_estado_conservacao,
                 estado_pelicula=row.ev_estado_pelicula,
@@ -243,6 +220,7 @@ async def create_placa(
                 referencia=placa_create.endereco.referencia,
             )
 
+    creator_nome = current_user.nome
     evento = EventosPlaca(
         placa_id=placa.id,
         created_by=current_user.id,
@@ -262,7 +240,8 @@ async def create_placa(
             await minio_service.delete_file_async(object_name)
         raise
 
-    evento_response = await _map_evento_to_response(db, evento)
+    evento_response = EventoPlacaResponse.model_validate(evento)
+    evento_response.created_by_nome = creator_nome
     if object_name:
         evento_response.foto_url = minio_service.get_public_url(object_name)
 

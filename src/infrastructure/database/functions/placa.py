@@ -91,7 +91,8 @@ def _build_base_placa_query():
     ultimo_evento_sub = (
         select(
             EventosPlaca.id.label("ev_id"),
-            User.nome.label("ev_created_by"),
+            EventosPlaca.created_by.label("ev_created_by"),
+            User.nome.label("ev_created_by_nome"),
             EventosPlaca.tipo_evento.label("ev_tipo_evento"),
             EventosPlaca.estado_conservacao.label("ev_estado_conservacao"),
             EventosPlaca.estado_pelicula.label("ev_estado_pelicula"),
@@ -101,7 +102,7 @@ def _build_base_placa_query():
             EventosPlaca.observacao.label("ev_observacao"),
             EventosPlaca.timestamp.label("ev_timestamp"),
         )
-        .join(User, EventosPlaca.created_by == User.id)
+        .outerjoin(User, EventosPlaca.created_by == User.id)
         .where(
             EventosPlaca.placa_id == Placa.id,
             EventosPlaca.is_active.is_(True),
