@@ -9,7 +9,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from src.api.deps import get_current_user
 from src.application.schemas.evento_schema import EventoPlacaResponse
 from src.application.schemas.placa_schema import (
+    EnderecoCreate,
     EnderecoResponse,
+    EnderecoSugerido,
     PlacaCreate,
     PlacaListResponse,
     PlacaQueryParams,
@@ -31,6 +33,11 @@ from src.domain.models.placa import Placa
 from src.domain.models.user import User
 from src.infrastructure.database.connection import get_session
 from src.infrastructure.database.functions import placa as placa_functions
+from src.infrastructure.services.geocoding import (
+    GeocodingUnavailableError,
+    lookup_address,
+    reverse_geocode,
+)
 from src.infrastructure.storage.minio_client import StorageError, minio_service
 
 QUIXADA_CODIGO_IBGE = "2311306"
@@ -130,6 +137,44 @@ async def _upload_image(foto: UploadFile, file_bytes: bytes, placa_id: UUID) -> 
         ) from exc
 
 
+def _needs_geocoding(endereco: EnderecoCreate | None) -> bool:
+    """Indica se algum campo geocodificável (logradouro/bairro/cep) está vazio."""
+    if endereco is None:
+        return True
+    return not (endereco.logradouro and endereco.bairro and endereco.cep)
+
+
+def _build_endereco(
+    placa_id: UUID,
+    manual: EnderecoCreate | None,
+    sugerido: EnderecoSugerido | None,
+) -> Enderecos | None:
+    """Monta o endereço da placa mesclando o formulário com a geocodificação.
+
+    Os valores informados pelo agente têm prioridade; a sugestão da
+    geocodificação reversa apenas preenche os campos que vieram vazios.
+    A referência nunca é inferida. Retorna ``None`` se não houver nenhum dado.
+    """
+    manual = manual or EnderecoCreate()
+    sugerido = sugerido or EnderecoSugerido()
+
+    logradouro = manual.logradouro or sugerido.logradouro
+    bairro = manual.bairro or sugerido.bairro
+    cep = manual.cep or sugerido.cep
+    referencia = manual.referencia
+
+    if not any((logradouro, bairro, cep, referencia)):
+        return None
+
+    return Enderecos(
+        placa_id=placa_id,
+        logradouro=logradouro or "",
+        bairro=bairro or "",
+        cep=cep or "",
+        referencia=referencia,
+    )
+
+
 async def _get_placa_row_or_404(db: AsyncSession, placa_id: UUID) -> Any:
     row = await placa_functions.get_placa_by_id(db, placa_id)
     if row is None:
@@ -151,6 +196,10 @@ async def _get_placa_row_or_404(db: AsyncSession, placa_id: UUID) -> Any:
         "- Requer usuário autenticado (Agente ou Administrador).\n"
         "- Valida o tipo da imagem (`image/jpeg`, `image/png`, `image/webp`).\n"
         "- Realiza o upload da foto para o MinIO antes do commit no banco.\n"
+        "- Se `logradouro`, `bairro` ou `cep` não forem enviados, o backend tenta "
+        "preenchê-los via geocodificação reversa das coordenadas. Os valores "
+        "enviados pelo agente têm prioridade. Se o provedor de geocodificação "
+        "estiver indisponível, a placa é cadastrada normalmente sem esses campos.\n"
         "- A Placa, o Endereço e o evento `CRIACAO` são inseridos em uma única "
         "transação atômica (Append-Only). Caso o banco falhe, o arquivo órfão "
         "é removido do MinIO."
@@ -197,27 +246,14 @@ async def create_placa(
         ),
     )
 
-    object_name = await _upload_image(foto, file_bytes, placa.id)
+    # Geocodificação reversa antes do upload: se o provedor demorar/falhar,
+    # nenhum arquivo é enviado ao MinIO à toa e o cadastro segue sem a sugestão.
+    sugerido = None
+    if _needs_geocoding(placa_create.endereco):
+        sugerido = await reverse_geocode(placa_create.latitude, placa_create.longitude)
+    endereco = _build_endereco(placa.id, placa_create.endereco, sugerido)
 
-    endereco = None
-    if placa_create.endereco is not None:
-        has_endereco_info = any(
-            v is not None and v.strip() != ""
-            for v in (
-                placa_create.endereco.logradouro,
-                placa_create.endereco.bairro,
-                placa_create.endereco.cep,
-                placa_create.endereco.referencia,
-            )
-        )
-        if has_endereco_info:
-            endereco = Enderecos(
-                placa_id=placa.id,
-                logradouro=placa_create.endereco.logradouro or "",
-                bairro=placa_create.endereco.bairro or "",
-                cep=placa_create.endereco.cep or "",
-                referencia=placa_create.endereco.referencia,
-            )
+    object_name = await _upload_image(foto, file_bytes, placa.id)
 
     evento = EventosPlaca(
         placa_id=placa.id,
@@ -350,6 +386,61 @@ async def list_estados_conservacao() -> list[PlacaTipoItem]:
         PlacaTipoItem(codigo=codigo, descricao=descricao)
         for codigo, descricao in ESTADO_CONSERVACAO_DESCRICOES.items()
     ]
+
+
+@router.get(
+    "/endereco-por-coordenadas",
+    response_model=EnderecoSugerido,
+    status_code=status.HTTP_200_OK,
+    summary="Sugere um endereço a partir de coordenadas (geocodificação reversa)",
+    description=(
+        "Converte `latitude` e `longitude` em um endereço legível (logradouro, "
+        "bairro, CEP, cidade e estado) para o Frontend/Mobile pré-preencher o "
+        "formulário de cadastro de placa.\n\n"
+        "**Regras de Negócio:**\n"
+        "- Requer usuário autenticado.\n"
+        "- Campos não identificados pelo provedor retornam `null`.\n"
+        "- `404` quando não há endereço para as coordenadas.\n"
+        "- `503` quando o provedor de geocodificação está indisponível; o "
+        "formulário deve seguir com preenchimento manual."
+    ),
+    response_description="Endereço sugerido para as coordenadas.",
+    responses={
+        status.HTTP_404_NOT_FOUND: {
+            "description": "Nenhum endereço encontrado para as coordenadas."
+        },
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "description": "Provedor de geocodificação indisponível."
+        },
+    },
+)
+async def get_endereco_por_coordenadas(
+    latitude: Annotated[
+        float, Query(ge=-90, le=90, description="Latitude (WGS 84)", examples=[-4.97])
+    ],
+    longitude: Annotated[
+        float,
+        Query(ge=-180, le=180, description="Longitude (WGS 84)", examples=[-39.01]),
+    ],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> EnderecoSugerido:
+    try:
+        endereco = await lookup_address(latitude, longitude)
+    except GeocodingUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Serviço de geocodificação indisponível no momento. "
+                "Preencha o endereço manualmente."
+            ),
+        ) from exc
+
+    if endereco is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Nenhum endereço encontrado para as coordenadas informadas.",
+        )
+    return endereco
 
 
 @router.get(

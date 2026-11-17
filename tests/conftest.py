@@ -1,3 +1,6 @@
+from unittest.mock import AsyncMock
+
+import pytest
 import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -53,3 +56,16 @@ async def db_session(engine):
     """
     async with AsyncSession(engine) as session:
         yield session
+
+
+@pytest.fixture(autouse=True)
+def block_external_geocoding(monkeypatch):
+    """
+    Impede que os testes da API chamem o provedor real de geocodificação.
+    Por padrão o provedor "não encontra" endereço; testes específicos
+    sobrescrevem estes mocks com monkeypatch.
+    """
+    from src.api.routes import placas as placas_route
+
+    monkeypatch.setattr(placas_route, "reverse_geocode", AsyncMock(return_value=None))
+    monkeypatch.setattr(placas_route, "lookup_address", AsyncMock(return_value=None))
