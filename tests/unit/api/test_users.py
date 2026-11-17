@@ -136,6 +136,9 @@ async def test_get_users_me(client: AsyncClient, agent_token: str, agent_user):
     data = response.json()
     assert data["nome"] == agent_user.nome
     assert data["email"] == agent_user.email
+    assert data["role"] == agent_user.role.value
+    assert "created_at" in data
+    assert data["created_at"] is not None
 
 
 @pytest.mark.asyncio

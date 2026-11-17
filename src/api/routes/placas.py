@@ -64,6 +64,7 @@ async def _serialize_placa_rows(rows: list[Any]) -> list[PlacaResponse]:
             evento_response = EventoPlacaResponse(
                 id=row.ev_id,
                 created_by=row.ev_created_by,
+                created_by_nome=getattr(row, "ev_created_by_nome", None),
                 tipo_evento=row.ev_tipo_evento,
                 estado_conservacao=row.ev_estado_conservacao,
                 estado_pelicula=row.ev_estado_pelicula,
@@ -216,6 +217,7 @@ async def create_placa(
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     file_bytes = await _read_image(foto)
+    creator_nome = current_user.nome
 
     # Validação de Quixadá desativada temporariamente para ambiente de desenvolvimento:
     # municipio = await placa_functions.get_municipio_by_codigo_ibge(
@@ -275,6 +277,7 @@ async def create_placa(
         raise
 
     evento_response = EventoPlacaResponse.model_validate(evento)
+    evento_response.created_by_nome = creator_nome
     if object_name:
         evento_response.foto_url = minio_service.get_public_url(object_name)
 

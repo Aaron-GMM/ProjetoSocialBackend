@@ -139,6 +139,7 @@ async def create_vistoria(
     object_name = await _upload_image(foto, file_bytes, placa_id)
     storage = _resolve_minio_service()
 
+    creator_nome = current_user.nome
     evento = EventosPlaca(
         placa_id=placa_id,
         created_by=current_user.id,
@@ -161,6 +162,7 @@ async def create_vistoria(
         raise
 
     evento_response = EventoPlacaResponse.model_validate(evento)
+    evento_response.created_by_nome = creator_nome
     evento_response.foto_url = storage.get_public_url(object_name)
     return evento_response
 
