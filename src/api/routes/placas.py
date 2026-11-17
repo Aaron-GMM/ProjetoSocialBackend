@@ -168,6 +168,7 @@ async def create_placa(
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     file_bytes = await _read_image(foto)
+    creator_nome = current_user.nome
 
     # Validação de Quixadá desativada temporariamente para ambiente de desenvolvimento:
     # municipio = await placa_functions.get_municipio_by_codigo_ibge(
@@ -220,7 +221,6 @@ async def create_placa(
                 referencia=placa_create.endereco.referencia,
             )
 
-    creator_nome = current_user.nome
     evento = EventosPlaca(
         placa_id=placa.id,
         created_by=current_user.id,
