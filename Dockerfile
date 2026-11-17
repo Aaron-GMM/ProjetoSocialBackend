@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends libpq5 \
 WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONPATH="/app"
 ENV PYTHONUNBUFFERED=1
 
 COPY src/ ./src/

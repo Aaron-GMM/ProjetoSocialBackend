@@ -1,10 +1,14 @@
 import asyncio
 import json
+import sys
+from pathlib import Path
 
 from sqlalchemy import text
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from src.infrastructure.database.connection import engine
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from src.infrastructure.database.connection import engine  # noqa: E402
 
 
 async def seed_municipio_quixada():
