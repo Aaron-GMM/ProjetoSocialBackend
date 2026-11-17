@@ -225,7 +225,7 @@ jobs:
             git reset --hard origin/main
 
             echo " Reconstruindo e subindo containers Docker..."
-            docker compose up -d --build --remove-orphans
+            COMPOSE_PROFILES=prod docker compose up -d --build --remove-orphans
 
             echo "🗄 Executando migrations do banco de dados (Alembic)..."
             docker compose exec -T api alembic upgrade head
