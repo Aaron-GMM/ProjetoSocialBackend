@@ -98,7 +98,8 @@ async def quixada(db_session):
         text(
             "INSERT INTO municipios (id, nome, codigo_ibge, poligono) VALUES "
             "(gen_random_uuid(), 'Quixadá', '2311306', "
-            "ST_GeomFromText(:poligono, 4326))"
+            "ST_GeomFromText(:poligono, 4326)) "
+            "ON CONFLICT (codigo_ibge) DO NOTHING"
         ),
         {"poligono": QUIXADA_POLIGONO},
     )
@@ -224,7 +225,6 @@ async def test_create_placa_with_blank_endereco_fields(
     assert await count_rows(db_session, Enderecos) == 0
 
 
-@pytest.mark.skip(reason="Validação de Quixadá desativada para dev")
 @pytest.mark.asyncio
 async def test_create_placa_outside_quixada(
     client: AsyncClient, db_session, quixada, agent_headers, mock_minio
@@ -243,11 +243,12 @@ async def test_create_placa_outside_quixada(
     assert await count_rows(db_session, Placa) == 0
 
 
-@pytest.mark.skip(reason="Validação de Quixadá desativada para dev")
 @pytest.mark.asyncio
 async def test_create_placa_without_municipio(
     client: AsyncClient, db_session, agent_headers, mock_minio
 ):
+    await db_session.execute(text("DELETE FROM municipios;"))
+    await db_session.commit()
     response = await client.post(
         "/placas/",
         data=FORM_DATA,

@@ -22,12 +22,16 @@ services:
       - MINIO_SECURE=${MINIO_SECURE}
     volumes:
       - ./src:/app/src
+      - ./scripts:/app/scripts
     depends_on:
       db:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+    command: >
+      sh -c "alembic upgrade head &&
+      python scripts/seed_quixada.py &&
+      uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload"
 
   db:
     image: postgis/postgis:15-3.3-alpine
@@ -86,6 +90,22 @@ services:
       exit 0;
       "
 
+  caddy:
+    image: caddy:2
+    profiles: ["prod"]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
 volumes:
   postgis_data:
   minio_data:
+  caddy_data:
+  caddy_config:
