@@ -381,3 +381,47 @@ async def test_update_evento_db_failure_cleans_up_new_photo(
         )
 
     mock_minio.delete_file_async.assert_awaited_once_with(NEW_OBJECT)
+
+
+@pytest.mark.asyncio
+async def test_relatorios_preservam_dados_do_agente_apos_desativacao(
+    client: AsyncClient,
+    placa_and_evento,
+    admin_headers,
+):
+    """[HU-A4] Relatórios de agente desativado preservam ID e nome."""
+    placa_id, evento_id = placa_and_evento
+
+    res_before = await client.get("/placas/", headers=admin_headers)
+    assert res_before.status_code == 200
+    ev_before = res_before.json()["items"][0]["ultimo_evento"]
+    agent_id = ev_before["created_by"]
+    agent_nome = ev_before["created_by_nome"]
+    assert agent_nome == "Agente Criador"
+
+    # Admin desativa a conta do agente via PATCH /users/{user_id}
+    res_deactivate = await client.patch(
+        f"/users/{agent_id}",
+        json={"is_active": False},
+        headers=admin_headers,
+    )
+    assert res_deactivate.status_code == 200
+    assert res_deactivate.json()["is_active"] is False
+
+    # GET /placas/ deve continuar exibindo created_by e created_by_nome no ultimo_evento
+    res_placas = await client.get("/placas/", headers=admin_headers)
+    assert res_placas.status_code == 200
+    ultimo_evento = res_placas.json()["items"][0]["ultimo_evento"]
+    assert ultimo_evento["id"] == evento_id
+    assert ultimo_evento["created_by"] == agent_id
+    assert ultimo_evento["created_by_nome"] == agent_nome
+
+    # GET /placas/{id}/historico também deve preservar created_by e created_by_nome
+    res_historico = await client.get(
+        f"/placas/{placa_id}/historico", headers=admin_headers
+    )
+    assert res_historico.status_code == 200
+    historico_item = res_historico.json()["items"][0]
+    assert historico_item["id"] == evento_id
+    assert historico_item["created_by"] == agent_id
+    assert historico_item["created_by_nome"] == agent_nome

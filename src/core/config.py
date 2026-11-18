@@ -32,5 +32,12 @@ class Settings(BaseSettings):
     MINIO_BUCKET_NAME: str
     MINIO_SECURE: bool
 
+    # Geocodificação reversa (Nominatim / OpenStreetMap)
+    # A política de uso do Nominatim exige um User-Agent identificável e limita
+    # o uso a ~1 requisição/segundo: https://operations.osmfoundation.org/policies/nominatim/
+    GEOCODING_URL: str = "https://nominatim.openstreetmap.org/reverse"
+    GEOCODING_TIMEOUT: float = 3.0
+    GEOCODING_USER_AGENT: str = "CacaPlacaAPI/0.1 (Projeto Social Quixada)"
+
 
 settings = Settings()

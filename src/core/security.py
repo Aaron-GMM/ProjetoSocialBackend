@@ -68,9 +68,11 @@ def generate_random_password(length: int = 12) -> str:
     return "".join(password)
 
 
-def create_reset_token(user_id: int) -> str:
+def create_reset_token(user_id: int, password_hash: str | None = None) -> str:
     """Gera um JWT de vida curta destinado apenas à redefinição de senha."""
-    data = {"sub": str(user_id)}
+    data: dict[str, Any] = {"sub": str(user_id)}
+    if password_hash:
+        data["pwd_fgp"] = hash_token(password_hash)[:16]
     expires_delta = timedelta(minutes=RESET_TOKEN_EXPIRE_MINUTES)
     return _create_token(data, PASSWORD_RESET_TOKEN_TYPE, expires_delta)
 

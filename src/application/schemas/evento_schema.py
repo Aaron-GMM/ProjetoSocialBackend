@@ -135,6 +135,7 @@ class EventoPlacaResponse(BaseModel):
 
     id: UUID
     created_by: int
+    created_by_nome: str | None = None
     tipo_evento: TipoEvento
     estado_conservacao: EstadoConservacao
     estado_pelicula: EstadoConservacao | None

@@ -25,6 +25,7 @@ from src.domain.enums.placa_enums import (
 __all__ = [
     "EnderecoCreate",
     "EnderecoResponse",
+    "EnderecoSugerido",
     "EventoPlacaCreate",
     "EventoPlacaListResponse",
     "EventoPlacaResponse",
@@ -248,6 +249,20 @@ class EnderecoResponse(BaseModel):
     referencia: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class EnderecoSugerido(BaseModel):
+    """Endereço sugerido a partir de coordenadas (geocodificação reversa)."""
+
+    logradouro: str | None = Field(
+        None, description="Logradouro (rua)", examples=["Rua Basílio Pinto"]
+    )
+    bairro: str | None = Field(None, description="Bairro", examples=["Centro"])
+    cep: str | None = Field(
+        None, description="CEP no formato 00000-000", examples=["63900-000"]
+    )
+    cidade: str | None = Field(None, description="Cidade", examples=["Quixadá"])
+    estado: str | None = Field(None, description="Estado", examples=["Ceará"])
 
 
 class PlacaResponse(BaseModel):

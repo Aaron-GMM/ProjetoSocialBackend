@@ -86,7 +86,8 @@ async def quixada(db_session):
         text(
             "INSERT INTO municipios (id, nome, codigo_ibge, poligono) VALUES "
             "(gen_random_uuid(), 'Quixadá', '2311306', "
-            "ST_GeomFromText(:poligono, 4326))"
+            "ST_GeomFromText(:poligono, 4326)) "
+            "ON CONFLICT (codigo_ibge) DO NOTHING"
         ),
         {"poligono": QUIXADA_POLIGONO},
     )

@@ -11,6 +11,7 @@ from src.domain.models.endereco import Enderecos
 from src.domain.models.eventos_placa import EventosPlaca
 from src.domain.models.municipio import Municipio
 from src.domain.models.placa import Placa
+from src.domain.models.user import User
 from src.infrastructure.database.functions.evento import (
     count_active_eventos_placa,
     create_evento,
@@ -91,6 +92,7 @@ def _build_base_placa_query():
         select(
             EventosPlaca.id.label("ev_id"),
             EventosPlaca.created_by.label("ev_created_by"),
+            User.nome.label("ev_created_by_nome"),
             EventosPlaca.tipo_evento.label("ev_tipo_evento"),
             EventosPlaca.estado_conservacao.label("ev_estado_conservacao"),
             EventosPlaca.estado_pelicula.label("ev_estado_pelicula"),
@@ -100,6 +102,7 @@ def _build_base_placa_query():
             EventosPlaca.observacao.label("ev_observacao"),
             EventosPlaca.timestamp.label("ev_timestamp"),
         )
+        .outerjoin(User, EventosPlaca.created_by == User.id)
         .where(
             EventosPlaca.placa_id == Placa.id,
             EventosPlaca.is_active.is_(True),

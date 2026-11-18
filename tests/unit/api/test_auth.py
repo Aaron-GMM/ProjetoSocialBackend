@@ -143,6 +143,7 @@ def test_forgot_password_usuario_existente_envia_email_com_token():
     fake_user.id = 7
     fake_user.email = "usuario@teste.com"
     fake_user.nome = "Usuário Teste"
+    fake_user.password_hash = get_password_hash("senha_atual")
 
     with (
         patch(
@@ -195,6 +196,7 @@ def test_forgot_password_mensagem_generica_previnem_user_enumeration():
     fake_user.id = 1
     fake_user.email = "existe@teste.com"
     fake_user.nome = "Existe"
+    fake_user.password_hash = get_password_hash("senha_atual")
 
     with patch(
         "src.api.routes.auth.get_user_by_email_case_insensitive",
@@ -260,6 +262,7 @@ def test_reset_password_com_token_valido_atualiza_senha():
     fake_user = MagicMock(spec=User)
     fake_user.id = 7
     fake_user.password_hash = get_password_hash("senha_antiga")
+    fake_user.is_active = True
 
     mock_db = MagicMock()
     mock_db.get = AsyncMock(return_value=fake_user)
@@ -272,9 +275,10 @@ def test_reset_password_com_token_valido_atualiza_senha():
             "src.api.routes.auth.change_user_password",
             new_callable=AsyncMock,
         ) as mock_change_password:
+            token = create_reset_token(fake_user.id, fake_user.password_hash)
             response = client.post(
                 "/auth/reset-password",
-                params={"token": create_reset_token(fake_user.id)},
+                params={"token": token},
                 json={"new_password": "senha_nova"},
             )
 
@@ -301,3 +305,84 @@ def test_reset_password_com_token_invalido_retorna_401():
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Token de redefinição inválido ou expirado."
+
+
+def test_reset_password_validacoes_formato_senha():
+    fake_user = MagicMock(spec=User)
+    fake_user.id = 1
+    fake_user.password_hash = get_password_hash("senha_valida")
+    fake_user.is_active = True
+
+    valid_token = create_reset_token(fake_user.id, fake_user.password_hash)
+
+    mock_db = MagicMock()
+    mock_db.get = AsyncMock(return_value=fake_user)
+    app.dependency_overrides[get_session] = lambda: mock_db
+
+    try:
+        # Menos de 5 caracteres (< 5) -> 422
+        res_curta = client.post(
+            "/auth/reset-password",
+            params={"token": valid_token},
+            json={"new_password": "123"},
+        )
+        assert res_curta.status_code == 422
+
+        # Contém espaços em branco -> 422
+        res_espaco = client.post(
+            "/auth/reset-password",
+            params={"token": valid_token},
+            json={"new_password": "abc 123"},
+        )
+        assert res_espaco.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_reset_token_uso_unico_reuso_retorna_401():
+    fake_user = MagicMock(spec=User)
+    fake_user.id = 10
+    senha_inicial = "senha_antiga_123"
+    fake_user.password_hash = get_password_hash(senha_inicial)
+    fake_user.is_active = True
+
+    mock_db = MagicMock()
+    mock_db.get = AsyncMock(return_value=fake_user)
+    mock_db.exec = AsyncMock()
+    mock_db.commit = AsyncMock()
+
+    # Efeito colateral simulando alteração da senha
+    # no banco após o 1º reset bem-sucedido
+    async def mock_change_password(new_password, user, db):
+        user.password_hash = get_password_hash(new_password)
+
+    app.dependency_overrides[get_session] = lambda: mock_db
+
+    try:
+        token = create_reset_token(fake_user.id, fake_user.password_hash)
+
+        with patch(
+            "src.api.routes.auth.change_user_password",
+            new_callable=AsyncMock,
+            side_effect=mock_change_password,
+        ):
+            # 1º Uso com sucesso
+            response_1 = client.post(
+                "/auth/reset-password",
+                params={"token": token},
+                json={"new_password": "senha_nova_valida"},
+            )
+            assert response_1.status_code == 200
+
+            # 2º Tentativa de reuso com o MESMO token
+            # (o pwd_fgp não bate mais com a nova senha)
+            response_2 = client.post(
+                "/auth/reset-password",
+                params={"token": token},
+                json={"new_password": "outra_senha_qualquer"},
+            )
+            assert response_2.status_code == 401
+            msg = "Token de redefinição inválido ou expirado."
+            assert response_2.json()["detail"] == msg
+    finally:
+        app.dependency_overrides.clear()

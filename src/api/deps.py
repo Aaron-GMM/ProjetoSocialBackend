@@ -2,9 +2,16 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordBearer
+from jose import jwt
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from src.core.security import validate_access_token, validate_reset_token
+from src.core.security import (
+    ALGORITHM,
+    SECRET_KEY,
+    hash_token,
+    validate_access_token,
+    validate_reset_token,
+)
 from src.domain.enums.role import Role
 from src.domain.models.user import User
 from src.infrastructure.database.connection import get_session
@@ -64,6 +71,12 @@ async def get_current_user_from_reset_token(
             detail="Usuário inativo.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    password_hash = getattr(user, "password_hash", None)
+    if isinstance(password_hash, str) and password_hash:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("pwd_fgp") != hash_token(password_hash)[:16]:
+            raise credentials_exception
 
     return user
 

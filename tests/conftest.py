@@ -1,3 +1,6 @@
+from unittest.mock import AsyncMock
+
+import pytest
 import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -34,6 +37,20 @@ async def engine():
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis;"))
         await conn.run_sync(SQLModel.metadata.drop_all)
         await conn.run_sync(SQLModel.metadata.create_all)
+        await conn.execute(
+            text(
+                "INSERT INTO municipios (id, nome, codigo_ibge, poligono) VALUES "
+                "(gen_random_uuid(), 'Quixadá', '2311306', "
+                "ST_GeomFromText(:poligono, 4326)) "
+                "ON CONFLICT (codigo_ibge) DO NOTHING;"
+            ),
+            {
+                "poligono": (
+                    "POLYGON((-39.15 -5.05, -38.90 -5.05, -38.90 -4.85, "
+                    "-39.15 -4.85, -39.15 -5.05))"
+                )
+            },
+        )
 
     yield engine
 
@@ -53,3 +70,16 @@ async def db_session(engine):
     """
     async with AsyncSession(engine) as session:
         yield session
+
+
+@pytest.fixture(autouse=True)
+def block_external_geocoding(monkeypatch):
+    """
+    Impede que os testes da API chamem o provedor real de geocodificação.
+    Por padrão o provedor "não encontra" endereço; testes específicos
+    sobrescrevem estes mocks com monkeypatch.
+    """
+    from src.api.routes import placas as placas_route
+
+    monkeypatch.setattr(placas_route, "reverse_geocode", AsyncMock(return_value=None))
+    monkeypatch.setattr(placas_route, "lookup_address", AsyncMock(return_value=None))
