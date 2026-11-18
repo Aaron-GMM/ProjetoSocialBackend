@@ -194,6 +194,7 @@ async def test_change_user_password_atualiza_hash_e_salva_usuario():
     )
     db = MagicMock()
     db.commit = AsyncMock()
+    db.refresh = AsyncMock()
 
     await change_user_password("senha_nova", user, db)
 
@@ -202,3 +203,4 @@ async def test_change_user_password_atualiza_hash_e_salva_usuario():
     assert not verify_password("senha_antiga", user.password_hash)
     db.add.assert_called_once_with(user)
     db.commit.assert_awaited_once()
+    db.refresh.assert_awaited_once_with(user)

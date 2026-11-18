@@ -227,11 +227,9 @@ jobs:
             echo " Reconstruindo e subindo containers Docker..."
             COMPOSE_PROFILES=prod docker compose up -d --build --remove-orphans
 
-            echo "🗄 Executando migrations do banco de dados (Alembic)..."
-            docker compose exec -T api alembic upgrade head
-
-            echo "🗺 Garantindo seed do polígono de Quixadá ..."
-            docker compose exec -T api python scripts/seed_quixada.py
+            echo "⏳ Aguardando inicialização da API (Alembic + Seed Quixadá + Uvicorn)..."
+            sleep 5
+            docker compose ps
 
             echo "Limpando imagens Docker antigas não utilizadas..."
             docker image prune -f
