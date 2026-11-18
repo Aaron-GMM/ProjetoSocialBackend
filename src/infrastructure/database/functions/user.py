@@ -103,3 +103,4 @@ async def change_user_password(new_password: str, user: User, db: AsyncSession):
 
     db.add(user)
     await db.commit()
+    await db.refresh(user)

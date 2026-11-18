@@ -68,7 +68,7 @@ async def db_session(engine):
     O isolamento é garantido pela recriação do banco a cada teste
     (engine scope=function).
     """
-    async with AsyncSession(engine) as session:
+    async with AsyncSession(engine, expire_on_commit=False) as session:
         yield session
 
 

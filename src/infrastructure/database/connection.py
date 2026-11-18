@@ -1,4 +1,4 @@
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.config import settings
@@ -10,8 +10,14 @@ if url.startswith("postgresql://"):
 
 engine = create_async_engine(url, echo=True)
 
+async_session = async_sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+
 
 async def get_session() -> AsyncSession:
     """Dependência do FastAPI para injeção da sessão assíncrona do banco."""
-    async with AsyncSession(engine) as session:
+    async with async_session() as session:
         yield session
