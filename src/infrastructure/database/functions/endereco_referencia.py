@@ -33,17 +33,29 @@ _VIZINHOS_SQL = text("""
 _DIVISOES_SQL = text("""
     SELECT tipo, nome, sede, codigo_municipio
     FROM divisoes_territoriais
-    WHERE ST_Contains(geom, ST_SetSRID(ST_MakePoint(:lng, :lat), 4326))
+    WHERE ST_Covers(geom, ST_SetSRID(ST_MakePoint(:lng, :lat), 4326))
 """)
+
+# Identificador fixo do advisory lock transacional usado para serializar
+# execuções concorrentes do seed da base de endereços oficiais.
+_SEED_LOCK_ID = 231130601
+_SEED_LOCK_SQL = text("SELECT pg_advisory_xact_lock(:lock_id)")
 
 _INSERT_DIVISAO_SQL = text("""
     INSERT INTO divisoes_territoriais (
         codigo, tipo, nome, codigo_municipio, sede, geom
     )
-    VALUES (
-        :codigo, :tipo, :nome, :codigo_municipio, :sede,
-        ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(:geojson), 4326))
-    )
+    SELECT
+        v.codigo, v.tipo, v.nome, v.codigo_municipio, v.sede,
+        ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(v.geojson), 4326))
+    FROM unnest(
+        CAST(:codigos AS text[]),
+        CAST(:tipos AS text[]),
+        CAST(:nomes AS text[]),
+        CAST(:codigos_municipio AS text[]),
+        CAST(:sedes AS boolean[]),
+        CAST(:geojsons AS text[])
+    ) AS v(codigo, tipo, nome, codigo_municipio, sede, geojson)
     ON CONFLICT (codigo) DO UPDATE SET
         tipo = EXCLUDED.tipo,
         nome = EXCLUDED.nome,
@@ -68,11 +80,29 @@ _INSERT_ENDERECO_SQL = text("""
         chave_logradouro, localidade, bairro_correios, bairro, cep, cidade,
         estado, location
     )
-    VALUES (
-        :cod_unico_endereco, :codigo_municipio, :codigo_distrito, :logradouro,
-        :chave_logradouro, :localidade, :bairro_correios, :bairro, :cep,
-        :cidade, :estado,
-        ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)
+    SELECT
+        v.cod_unico_endereco, v.codigo_municipio, v.codigo_distrito,
+        v.logradouro, v.chave_logradouro, v.localidade, v.bairro_correios,
+        v.bairro, v.cep, v.cidade, v.estado,
+        ST_SetSRID(ST_MakePoint(v.lng, v.lat), 4326)
+    FROM unnest(
+        CAST(:codigos_unicos AS bigint[]),
+        CAST(:codigos_municipio AS text[]),
+        CAST(:codigos_distrito AS text[]),
+        CAST(:logradouros AS text[]),
+        CAST(:chaves_logradouro AS text[]),
+        CAST(:localidades AS text[]),
+        CAST(:bairros_correios AS text[]),
+        CAST(:bairros AS text[]),
+        CAST(:ceps AS text[]),
+        CAST(:cidades AS text[]),
+        CAST(:estados AS text[]),
+        CAST(:lngs AS double precision[]),
+        CAST(:lats AS double precision[])
+    ) AS v(
+        cod_unico_endereco, codigo_municipio, codigo_distrito, logradouro,
+        chave_logradouro, localidade, bairro_correios, bairro, cep, cidade,
+        estado, lng, lat
     )
     ON CONFLICT (cod_unico_endereco) DO UPDATE SET
         codigo_municipio = EXCLUDED.codigo_municipio,
@@ -114,7 +144,7 @@ _RESOLVER_BAIRROS_SQL = text("""
             COALESCE(
                 (
                     SELECT b.nome FROM divisoes_territoriais b
-                    WHERE b.tipo = 'bairro' AND ST_Contains(b.geom, er.location)
+                    WHERE b.tipo = 'bairro' AND ST_Covers(b.geom, er.location)
                     LIMIT 1
                 ),
                 CASE WHEN d.sede THEN er.bairro_correios ELSE d.nome END
@@ -203,26 +233,69 @@ async def buscar_divisoes(db: AsyncSession, lat: float, lng: float) -> DivisoesD
     )
 
 
-async def inserir_divisoes(conn: AsyncConnection, divisoes: Iterable[dict]) -> None:
-    """Insere/atualiza limites de bairros e distritos (idempotente)."""
+async def adquirir_lock_seed(conn: AsyncConnection) -> None:
+    """Adquire lock transacional para serializar execuções simultâneas do seed."""
+    await conn.execute(_SEED_LOCK_SQL, {"lock_id": _SEED_LOCK_ID})
+
+
+async def inserir_divisoes(conn: AsyncConnection, divisoes: Iterable[dict]) -> int:
+    """Insere/atualiza limites de bairros e distritos (idempotente).
+
+    Retorna quantas divisões foram inseridas ou alteradas.
+    """
     lote = list(divisoes)
-    if lote:
-        await conn.execute(_INSERT_DIVISAO_SQL, lote)
+    if not lote:
+        return 0
+    result = await conn.execute(
+        _INSERT_DIVISAO_SQL,
+        {
+            "codigos": [d["codigo"] for d in lote],
+            "tipos": [d["tipo"] for d in lote],
+            "nomes": [d["nome"] for d in lote],
+            "codigos_municipio": [d["codigo_municipio"] for d in lote],
+            "sedes": [bool(d["sede"]) for d in lote],
+            "geojsons": [d["geojson"] for d in lote],
+        },
+    )
+    return result.rowcount or 0
 
 
-async def inserir_enderecos(conn: AsyncConnection, linhas: Iterable[dict]) -> None:
-    """Insere/atualiza endereços de referência em lote (idempotente)."""
-    padrao = {"localidade": None, "bairro_correios": None, "bairro": None}
+async def inserir_enderecos(conn: AsyncConnection, linhas: Iterable[dict]) -> int:
+    """Insere/atualiza endereços de referência em lote (idempotente).
+
+    Retorna quantos endereços foram inseridos ou alterados.
+    """
     lote = [
         {
-            **padrao,
+            "localidade": None,
+            "bairro_correios": None,
+            "bairro": None,
             "chave_logradouro": chave_logradouro(linha.get("logradouro")) or None,
             **linha,
         }
         for linha in linhas
     ]
-    if lote:
-        await conn.execute(_INSERT_ENDERECO_SQL, lote)
+    if not lote:
+        return 0
+    result = await conn.execute(
+        _INSERT_ENDERECO_SQL,
+        {
+            "codigos_unicos": [r["cod_unico_endereco"] for r in lote],
+            "codigos_municipio": [r["codigo_municipio"] for r in lote],
+            "codigos_distrito": [r["codigo_distrito"] for r in lote],
+            "logradouros": [r["logradouro"] for r in lote],
+            "chaves_logradouro": [r["chave_logradouro"] for r in lote],
+            "localidades": [r["localidade"] for r in lote],
+            "bairros_correios": [r["bairro_correios"] for r in lote],
+            "bairros": [r["bairro"] for r in lote],
+            "ceps": [r["cep"] for r in lote],
+            "cidades": [r["cidade"] for r in lote],
+            "estados": [r["estado"] for r in lote],
+            "lngs": [r["lng"] for r in lote],
+            "lats": [r["lat"] for r in lote],
+        },
+    )
+    return result.rowcount or 0
 
 
 async def resolver_bairros(conn: AsyncConnection) -> int:

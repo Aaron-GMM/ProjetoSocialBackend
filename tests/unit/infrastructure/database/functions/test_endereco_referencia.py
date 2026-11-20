@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import gzip
 import json
@@ -160,6 +161,17 @@ async def test_buscar_divisoes_dentro_de_bairro(db_session):
 
 
 @pytest.mark.asyncio
+async def test_buscar_divisoes_ponto_na_fronteira_do_poligono(db_session):
+    """ST_Covers inclui pontos exatamente sobre a borda do polígono."""
+    await inserir(db_session, divisoes=DIVISOES)
+
+    divisoes = await buscar_divisoes(db_session, LAT + 0.0005, LNG)
+
+    assert divisoes.bairro == "Centro"
+    assert divisoes.distrito == "Quixadá"
+
+
+@pytest.mark.asyncio
 async def test_buscar_divisoes_sede_fora_dos_bairros(db_session):
     await inserir(db_session, divisoes=DIVISOES)
 
@@ -196,10 +208,12 @@ async def test_buscar_divisoes_fora_do_municipio(db_session):
 
 @pytest.mark.asyncio
 async def test_inserir_divisoes_e_idempotente_e_atualiza_nome(db_session):
-    await inserir(db_session, divisoes=DIVISOES)
-    await inserir(db_session, divisoes=DIVISOES)
+    conn = await db_session.connection()
+    assert await inserir_divisoes(conn, DIVISOES) == 3
+    assert await inserir_divisoes(conn, DIVISOES) == 0
     renomeado = {**DIVISOES[2], "nome": "Centro Histórico"}
-    await inserir(db_session, divisoes=[renomeado])
+    assert await inserir_divisoes(conn, [renomeado]) == 1
+    await db_session.commit()
 
     result = await db_session.execute(
         text(
@@ -357,9 +371,18 @@ async def test_seed_base_enderecos_carrega_resolve_e_e_idempotente(engine, tmp_p
 
     primeira = await seed_base_enderecos(database_url, **caminhos)
     segunda = await seed_base_enderecos(database_url, **caminhos)
+    # Execuções simultâneas são serializadas pelo advisory lock sem deadlock.
+    concorrentes = await asyncio.gather(
+        seed_base_enderecos(database_url, **caminhos),
+        seed_base_enderecos(database_url, **caminhos),
+    )
 
     assert primeira == {"divisoes": 3, "enderecos": 2500, "bairros": 2500}
     assert segunda == {"divisoes": 3, "enderecos": 2500, "bairros": 0}
+    assert concorrentes == [
+        {"divisoes": 3, "enderecos": 2500, "bairros": 0},
+        {"divisoes": 3, "enderecos": 2500, "bairros": 0},
+    ]
     async with engine.connect() as conn:
         result = await conn.execute(
             text(

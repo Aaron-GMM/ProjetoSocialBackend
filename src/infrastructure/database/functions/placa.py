@@ -32,14 +32,20 @@ _SEM_ACENTO = "aaaaaeeeeiiiiooooouuuucnaaaaaeeeeiiiiooooouuuucn"
 
 
 def _normalizar_termo(termo: str) -> str:
-    sem_acento = unicodedata.normalize("NFKD", termo).encode("ascii", "ignore")
-    return sem_acento.decode().lower()
+    # NFD separa apenas marcas diacríticas (ex.: "í" -> "i" + acento), sem
+    # alterar caracteres não-diacríticos como "º" (ex.: "1º de Maio").
+    sem_acento = "".join(
+        c
+        for c in unicodedata.normalize("NFD", termo)
+        if unicodedata.category(c) != "Mn"
+    ).lower()
+    return sem_acento.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _contem_sem_acento(coluna: Any, termo: str) -> Any:
     """``coluna`` contém ``termo``, ignorando acentos e maiúsculas."""
     coluna_normalizada = func.translate(func.lower(coluna), _COM_ACENTO, _SEM_ACENTO)
-    return coluna_normalizada.like(f"%{_normalizar_termo(termo)}%")
+    return coluna_normalizada.like(f"%{_normalizar_termo(termo)}%", escape="\\")
 
 
 __all__ = [

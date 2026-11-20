@@ -544,3 +544,30 @@ async def test_get_placas_filtros_bairro_e_logradouro_ignoram_acentos(
         response = await client.get("/placas/", params=params, headers=agent_headers)
         assert response.status_code == 200
         assert [i["id"] for i in response.json()["items"]] == [placa["id"]]
+
+
+@pytest.mark.asyncio
+async def test_get_placas_busca_preserva_ordinal_e_escapa_coringas_like(
+    client: AsyncClient, quixada, agent_headers
+):
+    placa_ordinal = await cadastrar_placa(
+        client, agent_headers, bairro="Centro", logradouro="Rua 1º de Maio"
+    )
+    placa_percent = await cadastrar_placa(
+        client, agent_headers, bairro="Centro", logradouro="Rua 100% Pavimentada"
+    )
+    await cadastrar_placa(
+        client, agent_headers, bairro="Centro", logradouro="Rua 1000 Casas"
+    )
+
+    res_ordinal = await client.get(
+        "/placas/", params={"logradouro": "1º"}, headers=agent_headers
+    )
+    assert res_ordinal.status_code == 200
+    assert [i["id"] for i in res_ordinal.json()["items"]] == [placa_ordinal["id"]]
+
+    res_percent = await client.get(
+        "/placas/", params={"logradouro": "100%"}, headers=agent_headers
+    )
+    assert res_percent.status_code == 200
+    assert [i["id"] for i in res_percent.json()["items"]] == [placa_percent["id"]]

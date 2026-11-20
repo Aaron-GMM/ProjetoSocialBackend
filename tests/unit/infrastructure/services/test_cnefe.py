@@ -88,6 +88,10 @@ def envelope_quixada() -> tuple[float, float, float, float]:
         ("TRAVESSA DOM LUCAS I", "Travessa Dom Lucas I"),
         ("RUA A", "Rua A"),
         ("BR-122", "BR-122"),
+        ("RODOVIA CE 265", "Rodovia CE 265"),
+        ("RODOVIA BR 172", "Rodovia BR 172"),
+        ("RUA RODRIGUES JUNIOR", "Rua Rodrigues Júnior"),
+        ("RUA JULIO CESAR", "Rua Júlio Cesar"),
         # palavras curtas não passam por regra de sufixo
         ("MAO", "Mao"),
         # espaços extras e entrada mista
@@ -130,6 +134,9 @@ def test_formatar_cep(entrada, esperado):
         ),
         ("FAZENDA", "", "BOLIVIA", "Fazenda Bolívia"),
         ("RUA", "", "SEM DENOMINACAO", None),
+        ("RUA", "", "SEM DENOMINACAO 2", None),
+        ("RUA", "", "SEM DENOMINACA ATRAS DA QUADRA", None),
+        ("TRAVESSA", "", "SEM DENOM9NACAO 2", None),
         ("RUA", "", "  SEM   NOME ", None),
         ("RUA", "", "", None),
     ],
@@ -288,6 +295,16 @@ def test_bairro_oficial(correios, esperado):
 def test_bairro_oficial_aceita_bairros_extras_quando_incluidos():
     assert bairro_oficial("Cedro", OFICIAIS) is None
     assert bairro_oficial("Cedro", [*OFICIAIS, "Cedro"]) == "Cedro"
+    # alias só é aplicado quando o nome oficial está na lista consultada
+    assert bairro_oficial("Daniel de Queirós", OFICIAIS) is None
+    assert (
+        bairro_oficial("Daniel de Queirós", [*OFICIAIS, "Daniel de Queiróz"])
+        == "Daniel de Queiróz"
+    )
+    assert (
+        bairro_oficial("São João dos Queiroz", [*OFICIAIS, "São João dos Queirozes"])
+        == "São João dos Queirozes"
+    )
 
 
 def divisoes(bairro=None, distrito=None, sede=False):
@@ -477,6 +494,11 @@ def test_divisoes_versionadas_sao_as_oficiais():
         ("Estrada Olho D Água", "Estrada Olho D'Água"),
         ("Rua 01", "Rua 1"),
         ("rua basilio pinto", "Rua Basílio Pinto"),
+        ("R. Basílio Pinto", "Rua Basílio Pinto"),
+        ("Av. Plácido Castelo", "Avenida Plácido Castelo"),
+        ("Av. Pres. Vargas", "Avenida Presidente Vargas"),
+        ("R. Dr. Rui Maia", "Rua Doutor Rui Maia"),
+        ("Tv. José Viana", "Travessa José Viana"),
     ],
 )
 def test_chave_logradouro_une_grafias_da_mesma_rua(a, b):
@@ -552,6 +574,11 @@ def test_base_versionada_nao_une_ruas_diferentes():
     assert "Rua Benjamim Constant" not in nomes
     assert "Serra Serra do Padre" not in nomes
     assert "Rodovia Presidente Presidente Costa e Silva" not in nomes
+    assert "Rodovia CE 265" in nomes
+    assert "Rodovia Ce 265" not in nomes
+    assert not any(
+        n and ("sem denom" in n.lower() or "denom9" in n.lower()) for n in nomes
+    )
     assert {
         "Rua João Ricardo da Silveira",
         "Travessa João Ricardo da Silveira",

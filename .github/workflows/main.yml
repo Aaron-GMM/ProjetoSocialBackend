@@ -239,9 +239,6 @@ jobs:
             echo "🗺 Garantindo seed do polígono de Quixadá ..."
             docker compose exec -T api python scripts/seed_quixada.py
 
-            echo "🏠 Garantindo seed da base de endereços oficiais (IBGE/Correios)..."
-            docker compose exec -T api python scripts/seed_base_enderecos.py
-
             echo "Limpando imagens Docker antigas não utilizadas..."
             docker image prune -f
 

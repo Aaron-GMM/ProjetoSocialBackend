@@ -53,19 +53,19 @@ def _wkb_para_geojson(wkb: bytes) -> dict:
         pos += struct.calcsize(ordem + fmt)
         return valores
 
-    def ler_poligono(ordem: str) -> list:
+    def ler_poligono(ordem: str, dim: int) -> list:
         (n_aneis,) = ler("I", ordem)
         aneis = []
         for _ in range(n_aneis):
             (n_pontos,) = ler("I", ordem)
-            pontos = ler(f"{2 * n_pontos}d", ordem)
+            pontos = ler(f"{dim * n_pontos}d", ordem)
             aneis.append(
                 [
                     [
                         round(pontos[i], CASAS_DECIMAIS),
                         round(pontos[i + 1], CASAS_DECIMAIS),
                     ]
-                    for i in range(0, len(pontos), 2)
+                    for i in range(0, len(pontos), dim)
                 ]
             )
         return aneis
@@ -74,17 +74,20 @@ def _wkb_para_geojson(wkb: bytes) -> dict:
         nonlocal pos
         ordem = "<" if wkb[pos] == 1 else ">"
         pos += 1
-        (tipo,) = ler("I", ordem)
-        tipo %= 1000  # ignora flags Z/M (ISO)
+        (tipo_raw,) = ler("I", ordem)
+        dim_flag, tipo = divmod(tipo_raw, 1000)
+        dim = {0: 2, 1: 3, 2: 3, 3: 4}.get(dim_flag)
+        if dim is None:
+            raise ValueError(f"Tipo de geometria WKB não suportado: {tipo_raw}")
         if tipo == 3:
-            return [ler_poligono(ordem)]
+            return [ler_poligono(ordem, dim)]
         if tipo == 6:
             (n,) = ler("I", ordem)
             poligonos = []
             for _ in range(n):
                 poligonos.extend(ler_geometria())
             return poligonos
-        raise ValueError(f"Tipo de geometria WKB não suportado: {tipo}")
+        raise ValueError(f"Tipo de geometria WKB não suportado: {tipo_raw}")
 
     return {"type": "MultiPolygon", "coordinates": ler_geometria()}
 

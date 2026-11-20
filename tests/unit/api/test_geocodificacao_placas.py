@@ -615,17 +615,22 @@ async def test_create_placa_grava_rua_e_bairro_digitados_na_grafia_oficial(
     response = await post_placa(
         client,
         agent_headers,
-        logradouro="rua rui barbosa",
+        logradouro="r. rui barbosa",
         bairro="CENTRO",
-        cep="63900-000",
+        cep="63900000",
     )
 
     assert response.status_code == 201, response.json()
     endereco = response.json()["endereco"]
     assert endereco["logradouro"] == "Rua Rui Barbosa"
     assert endereco["bairro"] == "Centro"
+    assert endereco["cep"] == "63900-000"
     salvo = await get_endereco_salvo(db_session)
-    assert (salvo.logradouro, salvo.bairro) == ("Rua Rui Barbosa", "Centro")
+    assert (salvo.logradouro, salvo.bairro, salvo.cep) == (
+        "Rua Rui Barbosa",
+        "Centro",
+        "63900-000",
+    )
 
 
 @pytest.mark.asyncio
@@ -655,7 +660,7 @@ async def test_update_placa_grava_rua_e_bairro_na_grafia_oficial(
 
     response = await client.patch(
         f"/placas/{placa_id}",
-        data={"logradouro": "RUA RUI BARBOSA", "bairro": "centro"},
+        data={"logradouro": "R. RUI BARBOSA", "bairro": "centro", "cep": "63900207"},
         headers=agent_headers,
     )
 
@@ -663,3 +668,4 @@ async def test_update_placa_grava_rua_e_bairro_na_grafia_oficial(
     endereco = response.json()["endereco"]
     assert endereco["logradouro"] == "Rua Rui Barbosa"
     assert endereco["bairro"] == "Centro"
+    assert endereco["cep"] == "63900-207"

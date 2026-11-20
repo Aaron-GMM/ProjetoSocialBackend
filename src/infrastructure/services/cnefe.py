@@ -35,10 +35,14 @@ MUNICIPIOS = {"2311306": ("Quixadá", "Ceará")}
 # usam para a região do Residencial Rachel de Queiroz.
 BAIRROS_OFICIAIS_EXTRAS = {"Cedro"}
 
-# Grafias dos Correios que diferem do nome oficial. Chave: nome normalizado.
+# Grafias alternativas (ex.: Correios ou digitação comum) que diferem do nome
+# oficial. Chave: nome normalizado. Só são aplicadas quando o nome oficial
+# correspondente faz parte da lista ``oficiais`` consultada.
 ALIASES_BAIRROS = {
     "NOVA JESUSALEM": "Nova Jerusalém",
     "ALTO BOA VISTA": "Alto da Boa Vista",
+    "DANIEL DE QUEIROS": "Daniel de Queiróz",
+    "SAO JOAO DOS QUEIROZ": "São João dos Queirozes",
 }
 
 # Palavras com acentuação inequívoca em nomes de logradouros/bairros de
@@ -101,6 +105,8 @@ ACENTOS = {
     "JONATAS": "Jônatas",
     "JOSE": "José",
     "JUA": "Juá",
+    "JULIO": "Júlio",
+    "JUNIOR": "Júnior",
     "LAZARO": "Lázaro",
     "LOURENCO": "Lourenço",
     "LUCIA": "Lúcia",
@@ -164,10 +170,12 @@ SUFIXOS = (
 _SUFIXO_MIN_LEN = 4  # evita mexer em palavras curtas/abreviações
 
 CONECTIVOS = {"DE", "DA", "DO", "DAS", "DOS", "E", "EM", "NA", "NO", "AO", "AOS"}
+SIGLAS = {"BR", "CE"}
 ROMANOS = re.compile(r"^(I{1,3}|IV|V|VI{0,3}|IX|X{1,3})$")
 
-# Logradouros sem nome real no cadastro.
-SEM_NOME = {"SEM DENOMINACAO", "SEM NOME", "SEM DENOMINACA"}
+# Logradouros sem nome real no cadastro (inclui variações numeradas e erros de
+# digitação do CNEFE, como "SEM DENOMINACAO 2" e "SEM DENOM9NACAO 2").
+_SEM_NOME_RE = re.compile(r"^SEM\s+(?:DENOM\w*|NOME)\b")
 
 
 def _formatar_palavra(palavra: str, nas_pontas: bool) -> str:
@@ -177,8 +185,8 @@ def _formatar_palavra(palavra: str, nas_pontas: bool) -> str:
     # de letra) e "De Frente ao Posto" mantêm a maiúscula.
     if palavra in CONECTIVOS and not nas_pontas:
         return palavra.lower()
-    if ROMANOS.match(palavra) or len(palavra) == 1:
-        return palavra  # "II", "III", "Rua A"
+    if palavra in SIGLAS or ROMANOS.match(palavra) or len(palavra) == 1:
+        return palavra  # "CE", "BR", "II", "III", "Rua A"
     if palavra in ACENTOS:
         return ACENTOS[palavra]
     if len(palavra) >= _SUFIXO_MIN_LEN:
@@ -209,7 +217,7 @@ def formatar_cep(valor: str | None) -> str | None:
 def montar_logradouro(tipo: str, titulo: str, nome: str) -> str | None:
     """Compõe ``RUA`` + ``SAO`` + ``JOAO`` em ``Rua São João``."""
     nome = " ".join((nome or "").upper().split())
-    if not nome or nome in SEM_NOME:
+    if not nome or _SEM_NOME_RE.match(nome):
         return None
     partes = [p for p in (tipo, titulo, nome) if p and p.strip()]
     return formatar_nome(" ".join(partes))
@@ -226,14 +234,58 @@ def chave_nome(nome: str | None) -> str:
 # eles que distinguem ruas diferentes com o mesmo nome.
 _CONECTIVOS_CHAVE = {"DE", "DA", "DO", "DAS", "DOS", "E", "D"}
 
+# Abreviações de tipo (só na primeira palavra) e de títulos (no restante)
+# expandidas na chave de grafia para casar digitação manual ("Av. Dr. ...")
+# com a grafia oficial do IBGE ("Avenida Doutor ...").
+_ABREVIACOES_TIPO = {
+    "AL": "ALAMEDA",
+    "AV": "AVENIDA",
+    "BC": "BECO",
+    "CONJ": "CONJUNTO",
+    "EST": "ESTRADA",
+    "ESTR": "ESTRADA",
+    "FAZ": "FAZENDA",
+    "LG": "LARGO",
+    "LGO": "LARGO",
+    "LOT": "LOTEAMENTO",
+    "PC": "PRACA",
+    "PCA": "PRACA",
+    "R": "RUA",
+    "RES": "RESIDENCIAL",
+    "ROD": "RODOVIA",
+    "TRAV": "TRAVESSA",
+    "TV": "TRAVESSA",
+}
+_ABREVIACOES_TITULO = {
+    "CEL": "CORONEL",
+    "CON": "CONEGO",
+    "DEP": "DEPUTADO",
+    "DR": "DOUTOR",
+    "DRA": "DOUTORA",
+    "GEN": "GENERAL",
+    "GOV": "GOVERNADOR",
+    "MAJ": "MAJOR",
+    "MONS": "MONSENHOR",
+    "PE": "PADRE",
+    "PRES": "PRESIDENTE",
+    "PROF": "PROFESSOR",
+    "PROFA": "PROFESSORA",
+    "SEN": "SENADOR",
+    "STA": "SANTA",
+    "STO": "SANTO",
+    "TEN": "TENENTE",
+}
+
 
 def chave_logradouro(nome: str | None) -> str:
     """Chave de grafia de um logradouro, para unificar variações da mesma rua.
 
-    Além de acentos e maiúsculas, ignora conectivos, palavras repetidas e
-    variações ortográficas comuns (Y/I, Z/S, M/N antes de consoante ou no fim,
-    letras dobradas, zeros à esquerda). Ex.: "Rua Benjamim Barroso" e
-    "Rua Benjamin Barroso"; "Assentamento Bomfim 2" e "Assentamento Bonfim 2".
+    Além de acentos e maiúsculas, expande abreviações comuns de tipo/título
+    (ex.: ``Av.`` → ``Avenida``, ``Dr.`` → ``Doutor``), ignora conectivos,
+    palavras repetidas e variações ortográficas comuns (Y/I, Z/S, M/N antes de
+    consoante ou no fim, letras dobradas, zeros à esquerda). Ex.: "Rua Benjamim
+    Barroso" e "Rua Benjamin Barroso"; "Assentamento Bomfim 2" e "Assentamento
+    Bonfim 2".
     """
     palavras = re.sub(r"[^A-Z0-9 ]", " ", chave_nome(nome)).split()
     ultima = len(palavras) - 1
@@ -242,6 +294,10 @@ def chave_logradouro(nome: str | None) -> str:
         # Conectivo só no meio: "Rua D" e "Rua E" são ruas diferentes.
         if palavra in _CONECTIVOS_CHAVE and 0 < i < ultima:
             continue
+        if i == 0:
+            palavra = _ABREVIACOES_TIPO.get(palavra, palavra)
+        else:
+            palavra = _ABREVIACOES_TITULO.get(palavra, palavra)
         if palavra.isdigit():
             palavra = palavra.lstrip("0") or "0"
         else:
@@ -297,9 +353,10 @@ def bairro_oficial(nome: str | None, oficiais: Iterable[str]) -> str | None:
     chave = chave_nome(nome)
     if not chave:
         return None
-    if chave in ALIASES_BAIRROS:
-        return ALIASES_BAIRROS[chave]
     por_chave = {chave_nome(o): o for o in oficiais}
+    alvo = ALIASES_BAIRROS.get(chave)
+    if alvo is not None:
+        return por_chave.get(chave_nome(alvo))
     return por_chave.get(chave)
 
 

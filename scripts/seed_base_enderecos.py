@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.infrastructure.database.connection import url  # noqa: E402
 from src.infrastructure.database.functions.endereco_referencia import (  # noqa: E402
+    adquirir_lock_seed,
     inserir_divisoes,
     inserir_enderecos,
     resolver_bairros,
@@ -66,11 +67,18 @@ async def seed_base_enderecos(
         )
         total = 0
         async with engine.begin() as conn:
-            await inserir_divisoes(conn, divisoes)
+            await adquirir_lock_seed(conn)
+            divisoes_alteradas = await inserir_divisoes(conn, divisoes)
+            enderecos_alterados = 0
             while lote := list(islice(linhas, TAMANHO_LOTE)):
-                await inserir_enderecos(conn, lote)
+                enderecos_alterados += await inserir_enderecos(conn, lote)
                 total += len(lote)
-            alterados = await resolver_bairros(conn)
+            # Evita varrer 42 mil pontos com join espacial quando nada mudou.
+            alterados = (
+                await resolver_bairros(conn)
+                if (divisoes_alteradas or enderecos_alterados)
+                else 0
+            )
     finally:
         await engine.dispose()
     print(

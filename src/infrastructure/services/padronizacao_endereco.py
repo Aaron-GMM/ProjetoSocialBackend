@@ -16,7 +16,11 @@ from src.infrastructure.database.functions.endereco_referencia import (
     buscar_logradouro_canonico,
     listar_nomes_divisoes,
 )
-from src.infrastructure.services.cnefe import BAIRROS_OFICIAIS_EXTRAS, bairro_oficial
+from src.infrastructure.services.cnefe import (
+    BAIRROS_OFICIAIS_EXTRAS,
+    bairro_oficial,
+    formatar_cep,
+)
 
 
 async def padronizar_logradouro(
@@ -35,3 +39,10 @@ async def padronizar_bairro(db: AsyncSession, nome: str | None) -> str | None:
         return nome
     oficiais = [*await listar_nomes_divisoes(db), *BAIRROS_OFICIAIS_EXTRAS]
     return bairro_oficial(nome, oficiais) or nome.strip()
+
+
+def padronizar_cep(cep: str | None) -> str | None:
+    """Normaliza CEPs de 8 dígitos para ``00000-000``; mantém textos fora do padrão."""
+    if not cep or not cep.strip():
+        return cep
+    return formatar_cep(cep) or cep.strip()

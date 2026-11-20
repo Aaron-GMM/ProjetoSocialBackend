@@ -6,6 +6,7 @@ from src.infrastructure.database.functions.endereco_referencia import (
 )
 from src.infrastructure.services.padronizacao_endereco import (
     padronizar_bairro,
+    padronizar_cep,
     padronizar_logradouro,
 )
 
@@ -33,6 +34,7 @@ async def preparar(db_session):
                 ("2311306008", "bairro", "Centro"),
                 ("2311306016", "bairro", "Nova Jerusalém"),
                 ("2311306001", "bairro", "Alto da Boa Vista"),
+                ("231130635", "distrito", "Daniel de Queiróz"),
                 ("231130650", "distrito", "Juatama"),
             ]
         ],
@@ -67,6 +69,7 @@ async def preparar(db_session):
         ("Alto Boa Vista", "Alto da Boa Vista"),
         ("cedro", "Cedro"),  # bairro oficial fora da malha do IBGE
         ("juatama", "Juatama"),  # distrito
+        ("Daniel de Queirós", "Daniel de Queiróz"),  # alias de distrito
         ("  Bairro Novo  ", "Bairro Novo"),  # sem correspondência: mantém
         ("", ""),
         (None, None),
@@ -83,6 +86,7 @@ async def test_padronizar_bairro(db_session, digitado, gravado):
     ("digitado", "dlat", "gravado"),
     [
         ("rua benjamim constant", 0.0005, "Rua Benjamin Constant"),  # ~55 m
+        ("R. Benjamin Constant", 0.0, "Rua Benjamin Constant"),
         ("Rua Benjamin Constant", 0.0, "Rua Benjamin Constant"),
         # mesma rua, mas longe (> 300 m): não há como afirmar que é a mesma
         ("rua benjamim constant", 0.005, "rua benjamim constant"),
@@ -96,3 +100,18 @@ async def test_padronizar_logradouro(db_session, digitado, dlat, gravado):
     await preparar(db_session)
 
     assert await padronizar_logradouro(db_session, digitado, LAT + dlat, LNG) == gravado
+
+
+@pytest.mark.parametrize(
+    ("digitado", "gravado"),
+    [
+        ("63900000", "63900-000"),
+        (" 63.900-000 ", "63900-000"),
+        ("63900-000", "63900-000"),
+        ("  63900  ", "63900"),
+        ("", ""),
+        (None, None),
+    ],
+)
+def test_padronizar_cep(digitado, gravado):
+    assert padronizar_cep(digitado) == gravado

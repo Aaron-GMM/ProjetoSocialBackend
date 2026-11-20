@@ -41,6 +41,7 @@ from src.infrastructure.services.geocoding import (
 )
 from src.infrastructure.services.padronizacao_endereco import (
     padronizar_bairro,
+    padronizar_cep,
     padronizar_logradouro,
 )
 from src.infrastructure.storage.minio_client import StorageError, minio_service
@@ -149,7 +150,7 @@ async def _padronizar_endereco(
     latitude: float,
     longitude: float,
 ) -> EnderecoCreate | None:
-    """Coloca rua e bairro informados pelo agente na grafia oficial, quando há
+    """Coloca rua, bairro e CEP informados pelo agente no padrão oficial, quando há
     correspondência (ver ``padronizacao_endereco``)."""
     if endereco is None:
         return None
@@ -159,6 +160,7 @@ async def _padronizar_endereco(
                 db, endereco.logradouro, latitude, longitude
             ),
             "bairro": await padronizar_bairro(db, endereco.bairro),
+            "cep": padronizar_cep(endereco.cep),
         }
     )
 
