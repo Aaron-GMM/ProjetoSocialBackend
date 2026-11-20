@@ -505,3 +505,42 @@ async def test_get_placas_enums_endpoints(client: AsyncClient):
         {"codigo": "REGULAR", "descricao": "Regular"},
         {"codigo": "RUIM", "descricao": "Ruim"},
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "termo",
+    ["basilio", "BASILIO", "Basílio", "rua basilio pinto", "sao joao", "SÃO JOÃO"],
+)
+async def test_get_placas_busca_ignora_acentos_e_maiusculas(
+    client: AsyncClient, quixada, agent_headers, termo
+):
+    """Nomes gravados na grafia oficial devem ser achados sem acento (relatórios)."""
+    placa = await cadastrar_placa(
+        client, agent_headers, bairro="São João", logradouro="Rua Basílio Pinto"
+    )
+    await cadastrar_placa(
+        client, agent_headers, bairro="Centro", logradouro="Rua Rui Barbosa"
+    )
+
+    # termos de bairro e de rua: só a primeira placa corresponde
+    response = await client.get(
+        "/placas/", params={"busca": termo}, headers=agent_headers
+    )
+
+    assert response.status_code == 200
+    assert [i["id"] for i in response.json()["items"]] == [placa["id"]]
+
+
+@pytest.mark.asyncio
+async def test_get_placas_filtros_bairro_e_logradouro_ignoram_acentos(
+    client: AsyncClient, quixada, agent_headers
+):
+    placa = await cadastrar_placa(
+        client, agent_headers, bairro="Putiú", logradouro="Avenida Plácido Castelo"
+    )
+
+    for params in ({"bairro": "putiu"}, {"logradouro": "placido castelo"}):
+        response = await client.get("/placas/", params=params, headers=agent_headers)
+        assert response.status_code == 200
+        assert [i["id"] for i in response.json()["items"]] == [placa["id"]]
