@@ -6,6 +6,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.application.schemas.placa_schema import PlacaQueryParams
+from src.core.config import settings
 from src.domain.enums.placa_enums import TipoEvento, resolve_codigo_contran_filter
 from src.domain.models.endereco import Enderecos
 from src.domain.models.eventos_placa import EventosPlaca
@@ -192,6 +193,15 @@ async def list_placas(
         stmt = stmt.where(
             ultimo_evento_sub.c.ev_estado_conservacao == params.estado_conservacao
         )
+    if params.data_inicio or params.data_fim:
+        # Dia do registro no fuso local (created_at é gravado em UTC).
+        data_registro = func.date(
+            func.timezone(settings.APP_TIMEZONE, Placa.created_at)
+        )
+        if params.data_inicio:
+            stmt = stmt.where(data_registro >= params.data_inicio)
+        if params.data_fim:
+            stmt = stmt.where(data_registro <= params.data_fim)
 
     return await _paginate_placa_query(db, stmt, params.page, params.page_size)
 

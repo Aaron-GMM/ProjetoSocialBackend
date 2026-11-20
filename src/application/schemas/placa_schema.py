@@ -1,9 +1,9 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import Form
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.application.schemas.evento_schema import (
     EventoPlacaCreate,
@@ -330,6 +330,28 @@ class PlacaQueryParams(BaseModel):
     estado_conservacao: EstadoConservacao | None = Field(
         None, description="Filtro pelo estado de conservação atual"
     )
+    data_inicio: date | None = Field(
+        None,
+        description=(
+            "Data de registro inicial (inclusiva), no fuso de Quixadá. "
+            "Formato AAAA-MM-DD."
+        ),
+        examples=["2026-01-01"],
+    )
+    data_fim: date | None = Field(
+        None,
+        description=(
+            "Data de registro final (inclusiva, o dia inteiro), no fuso de "
+            "Quixadá. Formato AAAA-MM-DD."
+        ),
+        examples=["2026-12-31"],
+    )
+
+    @model_validator(mode="after")
+    def valida_periodo(self) -> "PlacaQueryParams":
+        if self.data_inicio and self.data_fim and self.data_inicio > self.data_fim:
+            raise ValueError("data_inicio não pode ser posterior a data_fim.")
+        return self
 
 
 class PlacaListResponse(BaseModel):

@@ -39,5 +39,9 @@ class Settings(BaseSettings):
     GEOCODING_TIMEOUT: float = 3.0
     GEOCODING_USER_AGENT: str = "CacaPlacaAPI/0.1 (Projeto Social Quixada)"
 
+    # Fuso usado para interpretar datas informadas pelos usuários (ex.: filtro
+    # por data de registro): um cadastro às 22h não deve cair no dia seguinte.
+    APP_TIMEZONE: str = "America/Fortaleza"
+
 
 settings = Settings()

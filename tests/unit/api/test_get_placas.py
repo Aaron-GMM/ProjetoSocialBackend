@@ -505,3 +505,95 @@ async def test_get_placas_enums_endpoints(client: AsyncClient):
         {"codigo": "REGULAR", "descricao": "Regular"},
         {"codigo": "RUIM", "descricao": "Ruim"},
     ]
+
+
+async def definir_data_registro(db_session, placa_id: str, utc: str) -> None:
+    await db_session.execute(
+        text("UPDATE placas SET created_at = :ts WHERE id = :id"),
+        {"ts": datetime.fromisoformat(utc), "id": placa_id},
+    )
+    await db_session.commit()
+
+
+@pytest_asyncio.fixture
+async def placas_em_datas(client: AsyncClient, db_session, quixada, agent_headers):
+    """Três placas com datas de registro controladas (horários em UTC)."""
+    a = await cadastrar_placa(client, agent_headers, codigo_contran="R-1")
+    b = await cadastrar_placa(client, agent_headers, codigo_contran="A-18")
+    c = await cadastrar_placa(client, agent_headers, codigo_contran="R-1")
+    # 10/03 às 09h em Quixadá
+    await definir_data_registro(db_session, a["id"], "2026-03-10T12:00:00+00:00")
+    # 10/03 às 22h30 em Quixadá = 11/03 01h30 em UTC
+    await definir_data_registro(db_session, b["id"], "2026-03-11T01:30:00+00:00")
+    # 12/03 às 12h em Quixadá
+    await definir_data_registro(db_session, c["id"], "2026-03-12T15:00:00+00:00")
+    return a["id"], b["id"], c["id"]
+
+
+async def ids_filtrados(client, headers, **params) -> set[str]:
+    response = await client.get("/placas/", params=params, headers=headers)
+    assert response.status_code == 200, response.json()
+    return {i["id"] for i in response.json()["items"]}
+
+
+@pytest.mark.asyncio
+async def test_get_placas_filtro_por_dia_usa_fuso_local(
+    client: AsyncClient, agent_headers, placas_em_datas
+):
+    a, b, _ = placas_em_datas
+
+    # b foi registrada às 22h30 do dia 10 em Quixadá (dia 11 em UTC)
+    assert await ids_filtrados(
+        client, agent_headers, data_inicio="2026-03-10", data_fim="2026-03-10"
+    ) == {a, b}
+
+
+@pytest.mark.asyncio
+async def test_get_placas_filtro_datas_inclusivas_e_isoladas(
+    client: AsyncClient, agent_headers, placas_em_datas
+):
+    a, b, c = placas_em_datas
+
+    assert await ids_filtrados(client, agent_headers, data_inicio="2026-03-11") == {c}
+    assert await ids_filtrados(client, agent_headers, data_fim="2026-03-11") == {a, b}
+    assert await ids_filtrados(
+        client, agent_headers, data_inicio="2026-03-10", data_fim="2026-03-12"
+    ) == {a, b, c}
+    assert (
+        await ids_filtrados(
+            client, agent_headers, data_inicio="2030-01-01", data_fim="2030-12-31"
+        )
+        == set()
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_placas_filtro_datas_combina_com_outros_filtros(
+    client: AsyncClient, agent_headers, placas_em_datas
+):
+    a, _, _ = placas_em_datas
+
+    assert await ids_filtrados(
+        client,
+        agent_headers,
+        data_inicio="2026-03-10",
+        data_fim="2026-03-10",
+        codigo_contran="R-1",
+    ) == {a}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"data_inicio": "2026-03-12", "data_fim": "2026-03-10"},  # período invertido
+        {"data_inicio": "10/03/2026"},  # formato inválido
+        {"data_fim": "2026-02-30"},  # data inexistente
+    ],
+)
+async def test_get_placas_filtro_datas_invalidas_retorna_422(
+    client: AsyncClient, agent_headers, params
+):
+    response = await client.get("/placas/", params=params, headers=agent_headers)
+
+    assert response.status_code == 422

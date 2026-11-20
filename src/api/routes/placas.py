@@ -461,7 +461,9 @@ async def get_endereco_por_coordenadas(
         "(ex: 'R-1', 'R1', 'PARE', 'Centro').\n"
         "- Filtro específico por `codigo_contran` (código oficial ou nome CONTRAN).\n"
         "- Filtros específicos por `bairro` e `logradouro` (case-insensitive).\n"
-        "- Filtro por `estado_conservacao` atual da placa."
+        "- Filtro por `estado_conservacao` atual da placa.\n"
+        "- Período por data de registro (`data_inicio`, `data_fim`, inclusivas, "
+        "formato AAAA-MM-DD, no fuso de Quixadá)."
     ),
     response_description="Lista paginada de placas com endereço e último evento.",
 )
