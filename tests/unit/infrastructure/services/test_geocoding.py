@@ -736,3 +736,21 @@ async def test_distrito_rural_com_provedor_fora_ainda_sugere_distrito(
     assert result == EnderecoSugerido(
         bairro="Juatama", cidade="Quixadá", estado="Ceará"
     )
+
+
+@pytest.mark.asyncio
+async def test_rua_do_nominatim_vem_na_grafia_oficial_quando_existe_no_ibge(
+    monkeypatch, db_session
+):
+    # endereço oficial a ~300 m (faixa intermediária) na mesma rua
+    await inserir_referencia(
+        db_session,
+        [referencia(1, DLAT_300M, bairro="Herval", logradouro="Rua Basílio Pinto")],
+    )
+    payload = {"address": {"road": "Rua Basilio Pinto", "town": "Quixadá"}}
+    mock_async_client(monkeypatch, json_handler(payload))
+    monkeypatch.setattr(settings, "GEOCODING_PADRONIZACAO_RAIO_M", 400.0)
+
+    result = await geocoding.lookup_address(LATITUDE, LONGITUDE, db_session)
+
+    assert result.logradouro == "Rua Basílio Pinto"

@@ -221,6 +221,73 @@ def chave_nome(nome: str | None) -> str:
     return " ".join(sem_acento.decode().upper().split())
 
 
+# Conectivos ignorados na comparação de nomes de rua ("Rua do Arisco" =
+# "Rua Arisco"). O tipo (Rua, Travessa...) e números NÃO são ignorados: são
+# eles que distinguem ruas diferentes com o mesmo nome.
+_CONECTIVOS_CHAVE = {"DE", "DA", "DO", "DAS", "DOS", "E", "D"}
+
+
+def chave_logradouro(nome: str | None) -> str:
+    """Chave de grafia de um logradouro, para unificar variações da mesma rua.
+
+    Além de acentos e maiúsculas, ignora conectivos, palavras repetidas e
+    variações ortográficas comuns (Y/I, Z/S, M/N antes de consoante ou no fim,
+    letras dobradas, zeros à esquerda). Ex.: "Rua Benjamim Barroso" e
+    "Rua Benjamin Barroso"; "Assentamento Bomfim 2" e "Assentamento Bonfim 2".
+    """
+    palavras = re.sub(r"[^A-Z0-9 ]", " ", chave_nome(nome)).split()
+    ultima = len(palavras) - 1
+    chave: list[str] = []
+    for i, palavra in enumerate(palavras):
+        # Conectivo só no meio: "Rua D" e "Rua E" são ruas diferentes.
+        if palavra in _CONECTIVOS_CHAVE and 0 < i < ultima:
+            continue
+        if palavra.isdigit():
+            palavra = palavra.lstrip("0") or "0"
+        else:
+            palavra = palavra.replace("Y", "I").replace("Z", "S")
+            palavra = re.sub(r"M(?=[^AEIOU]|$)", "N", palavra)
+            palavra = re.sub(r"(.)\1+", r"\1", palavra)
+        if chave and chave[-1] == palavra:
+            continue  # "Presidente Presidente Costa e Silva"
+        chave.append(palavra)
+    return " ".join(chave)
+
+
+def _tem_palavra_repetida(nome: str) -> bool:
+    palavras = chave_nome(nome).split()
+    return any(a == b for a, b in zip(palavras, palavras[1:]))
+
+
+def canonizar_logradouros(linhas: list[dict]) -> list[dict]:
+    """Unifica grafias da mesma rua na base: vale a mais usada no cadastro.
+
+    Preenche ``chave_logradouro`` e troca ``logradouro`` pela grafia canônica
+    do grupo (empate: ordem alfabética, para ser determinístico).
+    """
+    contagem: dict[str, Counter] = {}
+    for linha in linhas:
+        if linha["logradouro"]:
+            chave = chave_logradouro(linha["logradouro"])
+            linha["chave_logradouro"] = chave
+            contagem.setdefault(chave, Counter())[linha["logradouro"]] += 1
+        else:
+            linha["chave_logradouro"] = None
+    # Prefere grafias sem palavra repetida ("Serra Serra do Padre" é erro de
+    # cadastro), depois a mais frequente, depois a ordem alfabética.
+    canonica = {
+        chave: min(
+            grafias.items(),
+            key=lambda kv: (_tem_palavra_repetida(kv[0]), -kv[1], kv[0]),
+        )[0]
+        for chave, grafias in contagem.items()
+    }
+    for linha in linhas:
+        if linha["chave_logradouro"]:
+            linha["logradouro"] = canonica[linha["chave_logradouro"]]
+    return linhas
+
+
 def bairro_oficial(nome: str | None, oficiais: Iterable[str]) -> str | None:
     """Converte um nome de bairro (ex.: dos Correios) para o nome oficial.
 

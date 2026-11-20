@@ -9,9 +9,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from scripts.seed_base_enderecos import seed_base_enderecos
 from src.infrastructure.database.functions.endereco_referencia import (
     buscar_divisoes,
+    buscar_logradouro_canonico,
     buscar_vizinhos,
     inserir_divisoes,
     inserir_enderecos,
+    listar_nomes_divisoes,
     resolver_bairros,
 )
 from src.infrastructure.services.cnefe import DivisoesDoPonto
@@ -330,6 +332,8 @@ async def test_seed_base_enderecos_carrega_resolve_e_e_idempotente(engine, tmp_p
         for i in range(1, 2501):  # mais de um lote (TAMANHO_LOTE=2000)
             # metade dentro do Centro oficial, metade fora (região do Cedro)
             lat = LAT + (0.0001 if i % 2 else 0.005) + i * 1e-8
+            # 1 a cada 10 com grafia variante da mesma rua
+            nome = "RUY BARBOSA" if i % 10 == 0 else "RUI BARBOSA"
             writer.writerow(
                 [
                     i,
@@ -339,7 +343,7 @@ async def test_seed_base_enderecos_carrega_resolve_e_e_idempotente(engine, tmp_p
                     "RESIDENCIAL RACHEL DE QUEIROZ",
                     "RUA",
                     "",
-                    "RUI BARBOSA",
+                    nome,
                     lat,
                     LNG,
                 ]
@@ -364,3 +368,50 @@ async def test_seed_base_enderecos_carrega_resolve_e_e_idempotente(engine, tmp_p
             )
         )
         assert result.all() == [("Cedro", 1250), ("Centro", 1250)]
+        result = await conn.execute(
+            text("SELECT DISTINCT logradouro FROM enderecos_referencia")
+        )
+        assert result.all() == [("Rua Rui Barbosa",)]  # grafia unificada
+
+
+# ---------------------------------------------------------------------------
+# Grafia oficial de ruas e nomes de divisões
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_inserir_enderecos_calcula_chave_de_grafia(db_session):
+    await inserir(db_session, [endereco(1, 0.0, logradouro="Rua Benjamim Barroso")])
+
+    result = await db_session.execute(
+        text("SELECT chave_logradouro FROM enderecos_referencia")
+    )
+    assert result.scalar() == "RUA BENJAMIN BAROSO"
+
+
+@pytest.mark.asyncio
+async def test_buscar_logradouro_canonico(db_session):
+    await inserir(db_session, [endereco(1, 0.0, logradouro="Rua Benjamin Barroso")])
+
+    buscar = buscar_logradouro_canonico
+    assert await buscar(db_session, "rua benjamim barroso", LAT, LNG, 300) == (
+        "Rua Benjamin Barroso"
+    )
+    # fora do raio
+    assert (
+        await buscar(db_session, "Rua Benjamin Barroso", LAT + 0.01, LNG, 300) is None
+    )
+    # outra rua / vazio
+    assert await buscar(db_session, "Travessa Benjamin Barroso", LAT, LNG, 300) is None
+    assert await buscar(db_session, "  ", LAT, LNG, 300) is None
+
+
+@pytest.mark.asyncio
+async def test_listar_nomes_divisoes(db_session):
+    await inserir(db_session, divisoes=DIVISOES)
+
+    assert sorted(await listar_nomes_divisoes(db_session)) == [
+        "Centro",
+        "Juatama",
+        "Quixadá",
+    ]

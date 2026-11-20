@@ -39,6 +39,10 @@ from src.infrastructure.services.geocoding import (
     lookup_address,
     reverse_geocode,
 )
+from src.infrastructure.services.padronizacao_endereco import (
+    padronizar_bairro,
+    padronizar_logradouro,
+)
 from src.infrastructure.storage.minio_client import StorageError, minio_service
 
 QUIXADA_CODIGO_IBGE = "2311306"
@@ -139,6 +143,26 @@ async def _upload_image(foto: UploadFile, file_bytes: bytes, placa_id: UUID) -> 
         ) from exc
 
 
+async def _padronizar_endereco(
+    db: AsyncSession,
+    endereco: EnderecoCreate | None,
+    latitude: float,
+    longitude: float,
+) -> EnderecoCreate | None:
+    """Coloca rua e bairro informados pelo agente na grafia oficial, quando há
+    correspondência (ver ``padronizacao_endereco``)."""
+    if endereco is None:
+        return None
+    return endereco.model_copy(
+        update={
+            "logradouro": await padronizar_logradouro(
+                db, endereco.logradouro, latitude, longitude
+            ),
+            "bairro": await padronizar_bairro(db, endereco.bairro),
+        }
+    )
+
+
 def _needs_geocoding(endereco: EnderecoCreate | None) -> bool:
     """Indica se algum campo geocodificável (logradouro/bairro/cep) está vazio."""
     if endereco is None:
@@ -204,6 +228,10 @@ async def _get_placa_row_or_404(db: AsyncSession, placa_id: UUID) -> Any:
         "Nominatim/OSM). Os valores "
         "enviados pelo agente têm prioridade. Se não houver sugestão, a placa é "
         "cadastrada normalmente sem esses campos.\n"
+        "- Rua e bairro informados pelo agente são gravados na grafia oficial "
+        "quando correspondem a um nome oficial (ex.: `centro` → `Centro`, "
+        "`Rua Benjamim Constant` → `Rua Benjamin Constant`); caso contrário, "
+        "são mantidos como digitados.\n"
         "- A Placa, o Endereço e o evento `CRIACAO` são inseridos em uma única "
         "transação atômica (Append-Only). Caso o banco falhe, o arquivo órfão "
         "é removido do MinIO."
@@ -248,6 +276,10 @@ async def create_placa(
         location=WKTElement(
             f"POINT({placa_create.longitude} {placa_create.latitude})", srid=4326
         ),
+    )
+
+    placa_create.endereco = await _padronizar_endereco(
+        db, placa_create.endereco, placa_create.latitude, placa_create.longitude
     )
 
     # Geocodificação reversa antes do upload: se o provedor demorar/falhar,
@@ -503,7 +535,9 @@ async def list_placas(
         "**Regras de Negócio:**\n"
         "- Requer usuário autenticado (Agente ou Administrador).\n"
         "- Se `foto` for enviada, substitui a foto do evento mais recente e "
-        "remove o arquivo antigo do MinIO."
+        "remove o arquivo antigo do MinIO.\n"
+        "- Rua e bairro informados são gravados na grafia oficial quando "
+        "correspondem a um nome oficial; caso contrário, como digitados."
     ),
     response_description="Placa atualizada com endereço e último evento.",
 )
@@ -526,7 +560,10 @@ async def update_placa(
     to_save: list[Any] = [placa]
 
     if placa_update.endereco is not None:
-        endereco_data = placa_update.endereco.model_dump(exclude_none=True)
+        endereco_padronizado = await _padronizar_endereco(
+            db, placa_update.endereco, row.latitude, row.longitude
+        )
+        endereco_data = endereco_padronizado.model_dump(exclude_none=True)
         if endereco is None:
             endereco = Enderecos(
                 placa_id=placa.id,

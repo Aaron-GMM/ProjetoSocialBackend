@@ -10,6 +10,8 @@ from src.infrastructure.services.cnefe import (
     EnderecoEscolhido,
     EnderecoVizinho,
     bairro_oficial,
+    canonizar_logradouros,
+    chave_logradouro,
     chave_nome,
     escolher_endereco,
     formatar_cep,
@@ -452,3 +454,105 @@ def test_divisoes_versionadas_sao_as_oficiais():
     assert {"Juatama", "Custódio", "Tapuiará"} <= {d["nome"] for d in distritos}
     for divisao in divisoes_reais:
         assert json.loads(divisao["geojson"])["type"] == "MultiPolygon"
+
+
+# ---------------------------------------------------------------------------
+# Grafias diferentes da mesma rua (casos reais da base de Quixadá)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        ("Rua Benjamim Barroso", "Rua Benjamin Barroso"),
+        ("Rua Manoel Pereira Santana", "Rua Manoel Pereira de Santana"),
+        ("Assentamento Bomfim 2", "Assentamento Bonfim 2"),
+        ("Estrada Arisco", "Estrada do Arisco"),
+        (
+            "Rodovia Presidente Presidente Costa e Silva",
+            "Rodovia Presidente Costa e Silva",
+        ),
+        ("Fazenda Jerusalém", "Fazenda Jeruzalem"),
+        ("Rua Francisco Moreira de Sousa", "Rua Francisco Moreira de Souza"),
+        ("Estrada Olho D Água", "Estrada Olho D'Água"),
+        ("Rua 01", "Rua 1"),
+        ("rua basilio pinto", "Rua Basílio Pinto"),
+    ],
+)
+def test_chave_logradouro_une_grafias_da_mesma_rua(a, b):
+    assert chave_logradouro(a) == chave_logradouro(b)
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        # tipo diferente = logradouro diferente
+        ("Rua João Ricardo da Silveira", "Travessa João Ricardo da Silveira"),
+        ("Rua Alfredo Tavares de Almeida", "Rua Raimundo Tavares de Almeida"),
+        ("Fazenda Palmari", "Fazenda Palmas"),
+        ("Rua 01", "Rua 02"),
+        # letras que também são conectivos, no fim do nome, são o nome da rua
+        ("Rua D", "Rua E"),
+        ("Rua D", "Rua"),
+    ],
+)
+def test_chave_logradouro_separa_ruas_diferentes(a, b):
+    assert chave_logradouro(a) != chave_logradouro(b)
+
+
+def test_chave_logradouro_vazio():
+    assert chave_logradouro(None) == ""
+    assert chave_logradouro("  ") == ""
+
+
+def test_canonizar_logradouros_usa_grafia_mais_frequente():
+    linhas = canonizar_logradouros(
+        [
+            {"logradouro": "Rua Benjamim Constant"},
+            {"logradouro": "Rua Benjamin Constant"},
+            {"logradouro": "Rua Benjamin Constant"},
+            {"logradouro": None},
+            {"logradouro": "Rua Outra"},
+        ]
+    )
+
+    assert [linha["logradouro"] for linha in linhas] == [
+        "Rua Benjamin Constant",
+        "Rua Benjamin Constant",
+        "Rua Benjamin Constant",
+        None,
+        "Rua Outra",
+    ]
+    assert linhas[0]["chave_logradouro"] == chave_logradouro("Rua Benjamin Constant")
+    assert linhas[3]["chave_logradouro"] is None
+
+
+def test_canonizar_logradouros_evita_palavra_repetida_e_desempata():
+    linhas = canonizar_logradouros(
+        [
+            {"logradouro": "Serra Serra do Padre"},
+            {"logradouro": "Serra Serra do Padre"},
+            {"logradouro": "Serra do Padre"},
+            # empate: ordem alfabética
+            {"logradouro": "Vila São José"},
+            {"logradouro": "Vila de São José"},
+        ]
+    )
+
+    assert {linha["logradouro"] for linha in linhas[:3]} == {"Serra do Padre"}
+    assert {linha["logradouro"] for linha in linhas[3:]} == {"Vila São José"}
+
+
+def test_base_versionada_nao_une_ruas_diferentes():
+    """Auditoria da base real: só une grafias da mesma rua."""
+    linhas = canonizar_logradouros(list(ler_base_cnefe(BASE_REAL)))
+    nomes = {linha["logradouro"] for linha in linhas}
+
+    assert {"Rua D", "Rua E"} <= nomes
+    assert "Rua Benjamim Constant" not in nomes
+    assert "Serra Serra do Padre" not in nomes
+    assert "Rodovia Presidente Presidente Costa e Silva" not in nomes
+    assert {
+        "Rua João Ricardo da Silveira",
+        "Travessa João Ricardo da Silveira",
+    } <= nomes

@@ -51,6 +51,7 @@ def upgrade() -> None:
         sa.Column("codigo_municipio", sa.String(), nullable=False),
         sa.Column("codigo_distrito", sa.String(), nullable=False),
         sa.Column("logradouro", sa.String(), nullable=True),
+        sa.Column("chave_logradouro", sa.String(), nullable=True),
         sa.Column("localidade", sa.String(), nullable=True),
         sa.Column("bairro_correios", sa.String(), nullable=True),
         sa.Column("bairro", sa.String(), nullable=True),
@@ -72,9 +73,19 @@ def upgrade() -> None:
         ["codigo_distrito"],
         unique=False,
     )
+    op.create_index(
+        op.f("ix_enderecos_referencia_chave_logradouro"),
+        "enderecos_referencia",
+        ["chave_logradouro"],
+        unique=False,
+    )
 
 
 def downgrade() -> None:
+    op.drop_index(
+        op.f("ix_enderecos_referencia_chave_logradouro"),
+        table_name="enderecos_referencia",
+    )
     op.drop_index(
         op.f("ix_enderecos_referencia_codigo_distrito"),
         table_name="enderecos_referencia",

@@ -39,6 +39,9 @@ from src.infrastructure.services.cnefe import (
     escolher_endereco,
     resolver_bairro,
 )
+from src.infrastructure.services.padronizacao_endereco import (
+    padronizar_logradouro,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -261,8 +264,13 @@ async def lookup_address(
     # bairro da base local. O bairro e o CEP do Nominatim são descartados:
     # em Quixadá eles são palpites por proximidade (sem limites de bairro no
     # OSM e poucos CEPs genéricos), justamente o problema que a base resolve.
+    logradouro = externo.logradouro if externo else None
+    if logradouro and db is not None:
+        # Mesma rua no IBGE perto do ponto: usa a grafia oficial
+        # (ex.: "Avenida Doutor Antonio..." -> "Avenida Doutor Antônio...").
+        logradouro = await padronizar_logradouro(db, logradouro, latitude, longitude)
     return EnderecoSugerido(
-        logradouro=externo.logradouro if externo else None,
+        logradouro=logradouro,
         bairro=local.bairro,
         cep=None,
         cidade=local.cidade,

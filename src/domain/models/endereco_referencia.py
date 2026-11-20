@@ -14,7 +14,10 @@ class EnderecoReferencia(SQLModel, table=True):
         cod_unico_endereco (int): Código único do endereço no CNEFE.
         codigo_municipio (str): Código IBGE do município.
         codigo_distrito (str): Código IBGE do distrito.
-        logradouro (str, opcional): Logradouro formatado para exibição.
+        logradouro (str, opcional): Logradouro formatado para exibição, já na
+            grafia canônica da rua (ver ``canonizar_logradouros``).
+        chave_logradouro (str, opcional): Chave de grafia do logradouro, usada
+            para padronizar nomes vindos de outras fontes.
         localidade (str, opcional): Localidade registrada pelo recenseador
             (pode ser loteamento, residencial ou fazenda).
         bairro_correios (str, opcional): Bairro dos Correios para o CEP, já
@@ -42,6 +45,9 @@ class EnderecoReferencia(SQLModel, table=True):
         index=True, nullable=False, description="Código IBGE do distrito"
     )
     logradouro: str | None = Field(default=None, description="Logradouro")
+    chave_logradouro: str | None = Field(
+        default=None, index=True, description="Chave de grafia do logradouro"
+    )
     localidade: str | None = Field(default=None, description="Localidade (CNEFE)")
     bairro_correios: str | None = Field(
         default=None, description="Bairro oficial segundo os Correios"

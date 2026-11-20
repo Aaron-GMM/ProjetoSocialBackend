@@ -4,7 +4,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from src.infrastructure.services.cnefe import DivisoesDoPonto, EnderecoVizinho
+from src.infrastructure.services.cnefe import (
+    DivisoesDoPonto,
+    EnderecoVizinho,
+    chave_logradouro,
+)
 
 # A subconsulta ordena por `<->` (KNN pelo índice GiST) e limita a k
 # candidatos; só então calcula a distância real em metros (geography) e aplica
@@ -61,17 +65,20 @@ _INSERT_DIVISAO_SQL = text("""
 _INSERT_ENDERECO_SQL = text("""
     INSERT INTO enderecos_referencia (
         cod_unico_endereco, codigo_municipio, codigo_distrito, logradouro,
-        localidade, bairro_correios, bairro, cep, cidade, estado, location
+        chave_logradouro, localidade, bairro_correios, bairro, cep, cidade,
+        estado, location
     )
     VALUES (
         :cod_unico_endereco, :codigo_municipio, :codigo_distrito, :logradouro,
-        :localidade, :bairro_correios, :bairro, :cep, :cidade, :estado,
+        :chave_logradouro, :localidade, :bairro_correios, :bairro, :cep,
+        :cidade, :estado,
         ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)
     )
     ON CONFLICT (cod_unico_endereco) DO UPDATE SET
         codigo_municipio = EXCLUDED.codigo_municipio,
         codigo_distrito = EXCLUDED.codigo_distrito,
         logradouro = EXCLUDED.logradouro,
+        chave_logradouro = EXCLUDED.chave_logradouro,
         localidade = EXCLUDED.localidade,
         bairro_correios = EXCLUDED.bairro_correios,
         cep = EXCLUDED.cep,
@@ -82,14 +89,15 @@ _INSERT_ENDERECO_SQL = text("""
     -- reescrever a tabela inteira a cada subida da API.
     WHERE (
         enderecos_referencia.codigo_municipio, enderecos_referencia.codigo_distrito,
-        enderecos_referencia.logradouro, enderecos_referencia.localidade,
+        enderecos_referencia.logradouro, enderecos_referencia.chave_logradouro,
+        enderecos_referencia.localidade,
         enderecos_referencia.bairro_correios, enderecos_referencia.cep,
         enderecos_referencia.cidade, enderecos_referencia.estado,
         enderecos_referencia.location
     ) IS DISTINCT FROM (
         EXCLUDED.codigo_municipio, EXCLUDED.codigo_distrito, EXCLUDED.logradouro,
-        EXCLUDED.localidade, EXCLUDED.bairro_correios, EXCLUDED.cep,
-        EXCLUDED.cidade, EXCLUDED.estado, EXCLUDED.location
+        EXCLUDED.chave_logradouro, EXCLUDED.localidade, EXCLUDED.bairro_correios,
+        EXCLUDED.cep, EXCLUDED.cidade, EXCLUDED.estado, EXCLUDED.location
     )
 """)
 
@@ -118,6 +126,42 @@ _RESOLVER_BAIRROS_SQL = text("""
     WHERE e.cod_unico_endereco = r.cod_unico_endereco
       AND e.bairro IS DISTINCT FROM r.bairro
 """)
+
+
+# Mesma rua (pela chave de grafia) com endereço oficial perto do ponto.
+_LOGRADOURO_CANONICO_SQL = text("""
+    SELECT logradouro
+    FROM enderecos_referencia
+    WHERE chave_logradouro = :chave
+      AND ST_DWithin(
+          location::geography,
+          ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
+          :raio_m
+      )
+    LIMIT 1
+""")
+
+_NOMES_DIVISOES_SQL = text("SELECT nome FROM divisoes_territoriais")
+
+
+async def buscar_logradouro_canonico(
+    db: AsyncSession, nome: str, lat: float, lng: float, raio_m: float
+) -> str | None:
+    """Grafia oficial da rua ``nome`` se ela existir a até ``raio_m`` do ponto."""
+    chave = chave_logradouro(nome)
+    if not chave:
+        return None
+    result = await db.execute(
+        _LOGRADOURO_CANONICO_SQL,
+        {"chave": chave, "lat": lat, "lng": lng, "raio_m": raio_m},
+    )
+    return result.scalar_one_or_none()
+
+
+async def listar_nomes_divisoes(db: AsyncSession) -> list[str]:
+    """Nomes oficiais de bairros e distritos carregados."""
+    result = await db.execute(_NOMES_DIVISOES_SQL)
+    return list(result.scalars())
 
 
 async def buscar_vizinhos(
@@ -169,7 +213,14 @@ async def inserir_divisoes(conn: AsyncConnection, divisoes: Iterable[dict]) -> N
 async def inserir_enderecos(conn: AsyncConnection, linhas: Iterable[dict]) -> None:
     """Insere/atualiza endereços de referência em lote (idempotente)."""
     padrao = {"localidade": None, "bairro_correios": None, "bairro": None}
-    lote = [{**padrao, **linha} for linha in linhas]
+    lote = [
+        {
+            **padrao,
+            "chave_logradouro": chave_logradouro(linha.get("logradouro")) or None,
+            **linha,
+        }
+        for linha in linhas
+    ]
     if lote:
         await conn.execute(_INSERT_ENDERECO_SQL, lote)
 

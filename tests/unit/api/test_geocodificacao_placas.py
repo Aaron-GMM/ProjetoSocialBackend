@@ -14,7 +14,10 @@ from src.domain.models.endereco import Enderecos
 from src.domain.models.placa import Placa
 from src.domain.models.user import User
 from src.infrastructure.database.connection import get_session
-from src.infrastructure.database.functions.endereco_referencia import inserir_enderecos
+from src.infrastructure.database.functions.endereco_referencia import (
+    inserir_divisoes,
+    inserir_enderecos,
+)
 from src.infrastructure.database.functions.user import create_user
 from src.infrastructure.services import geocoding
 from src.infrastructure.services.geocoding import GeocodingUnavailableError
@@ -574,3 +577,89 @@ async def test_endereco_por_coordenadas_faixa_intermediaria_descarta_bairro_do_o
         "cidade": "Quixadá",
         "estado": "Ceará",
     }
+
+
+# ---------------------------------------------------------------------------
+# Padronização do que o agente digita (grafia oficial nos relatórios)
+# ---------------------------------------------------------------------------
+
+
+@pytest_asyncio.fixture
+async def base_padronizacao(db_session, base_local):
+    """Bairro oficial "Centro" ao redor do ponto de teste."""
+    conn = await db_session.connection()
+    await inserir_divisoes(
+        conn,
+        [
+            {
+                "codigo": "2311306008",
+                "tipo": "bairro",
+                "nome": "Centro",
+                "codigo_municipio": "2311306",
+                "sede": False,
+                "geojson": (
+                    '{"type":"Polygon","coordinates":[[[-39.02,-4.972],'
+                    "[-39.01,-4.972],[-39.01,-4.970],[-39.02,-4.970],"
+                    "[-39.02,-4.972]]]}"
+                ),
+            }
+        ],
+    )
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_create_placa_grava_rua_e_bairro_digitados_na_grafia_oficial(
+    client, db_session, agent_headers, mock_minio, base_padronizacao
+):
+    response = await post_placa(
+        client,
+        agent_headers,
+        logradouro="rua rui barbosa",
+        bairro="CENTRO",
+        cep="63900-000",
+    )
+
+    assert response.status_code == 201, response.json()
+    endereco = response.json()["endereco"]
+    assert endereco["logradouro"] == "Rua Rui Barbosa"
+    assert endereco["bairro"] == "Centro"
+    salvo = await get_endereco_salvo(db_session)
+    assert (salvo.logradouro, salvo.bairro) == ("Rua Rui Barbosa", "Centro")
+
+
+@pytest.mark.asyncio
+async def test_create_placa_mantem_texto_sem_correspondencia_oficial(
+    client, agent_headers, mock_minio, base_padronizacao
+):
+    response = await post_placa(
+        client,
+        agent_headers,
+        logradouro="Rua Nova do Loteamento",
+        bairro="Loteamento Recente",
+        cep="63900-000",
+    )
+
+    assert response.status_code == 201, response.json()
+    endereco = response.json()["endereco"]
+    assert endereco["logradouro"] == "Rua Nova do Loteamento"
+    assert endereco["bairro"] == "Loteamento Recente"
+
+
+@pytest.mark.asyncio
+async def test_update_placa_grava_rua_e_bairro_na_grafia_oficial(
+    client, agent_headers, mock_minio, base_padronizacao
+):
+    created = await post_placa(client, agent_headers)
+    placa_id = created.json()["id"]
+
+    response = await client.patch(
+        f"/placas/{placa_id}",
+        data={"logradouro": "RUA RUI BARBOSA", "bairro": "centro"},
+        headers=agent_headers,
+    )
+
+    assert response.status_code == 200, response.json()
+    endereco = response.json()["endereco"]
+    assert endereco["logradouro"] == "Rua Rui Barbosa"
+    assert endereco["bairro"] == "Centro"

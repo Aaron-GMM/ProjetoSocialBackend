@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     GEOCODING_LOCAL_RAIO_M: float = 150.0
     GEOCODING_LOCAL_RAIO_BAIRRO_M: float = 500.0
     GEOCODING_LOCAL_VIZINHOS: int = 7
+    # Raio para padronizar um nome de rua (Nominatim ou digitado pelo agente)
+    # com a grafia oficial da mesma rua no IBGE.
+    GEOCODING_PADRONIZACAO_RAIO_M: float = 300.0
 
 
 settings = Settings()

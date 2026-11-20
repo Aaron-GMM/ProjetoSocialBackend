@@ -1,7 +1,8 @@
 """Carrega a base de endereços oficiais de Quixadá no banco.
 
 1. Limites dos 21 bairros e 13 distritos oficiais (malhas do IBGE).
-2. Endereços do CNEFE/IBGE, com o bairro dos Correios por CEP.
+2. Endereços do CNEFE/IBGE, com o bairro dos Correios por CEP e as grafias
+   da mesma rua unificadas.
 3. Resolve o bairro oficial de cada endereço (ver ``resolver_bairros``).
 
 Idempotente: pode rodar a cada subida da API. Linhas já existentes só são
@@ -25,6 +26,7 @@ from src.infrastructure.database.functions.endereco_referencia import (  # noqa:
     resolver_bairros,
 )
 from src.infrastructure.services.cnefe import (  # noqa: E402
+    canonizar_logradouros,
     ler_bairros_correios,
     ler_base_cnefe,
     ler_divisoes,
@@ -50,8 +52,17 @@ async def seed_base_enderecos(
     try:
         divisoes = ler_divisoes(divisoes_path)
         bairros_oficiais = [d["nome"] for d in divisoes if d["tipo"] == "bairro"]
-        linhas = ler_base_cnefe(
-            cnefe_path, ler_bairros_correios(correios_path), bairros_oficiais
+        # Unifica grafias da mesma rua (ex.: "Benjamim"/"Benjamin Barroso").
+        linhas = iter(
+            canonizar_logradouros(
+                list(
+                    ler_base_cnefe(
+                        cnefe_path,
+                        ler_bairros_correios(correios_path),
+                        bairros_oficiais,
+                    )
+                )
+            )
         )
         total = 0
         async with engine.begin() as conn:
