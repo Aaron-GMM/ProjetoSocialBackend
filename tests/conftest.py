@@ -1,5 +1,3 @@
-from unittest.mock import AsyncMock
-
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
@@ -7,7 +5,9 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+import src.domain.models.divisao_territorial  # noqa: F401
 import src.domain.models.endereco  # noqa: F401
+import src.domain.models.endereco_referencia  # noqa: F401
 import src.domain.models.eventos_placa  # noqa: F401
 import src.domain.models.municipio  # noqa: F401
 import src.domain.models.placa  # noqa: F401
@@ -75,11 +75,21 @@ async def db_session(engine):
 @pytest.fixture(autouse=True)
 def block_external_geocoding(monkeypatch):
     """
-    Impede que os testes da API chamem o provedor real de geocodificação.
-    Por padrão o provedor "não encontra" endereço; testes específicos
-    sobrescrevem estes mocks com monkeypatch.
+    Impede qualquer chamada de rede ao provedor externo de geocodificação
+    (Nominatim). Por padrão ele responde "Unable to geocode" (sem endereço);
+    a base local (CNEFE) continua sendo consultada normalmente no banco de
+    teste. Testes específicos podem trocar o transporte HTTP via monkeypatch.
     """
-    from src.api.routes import placas as placas_route
+    import httpx
 
-    monkeypatch.setattr(placas_route, "reverse_geocode", AsyncMock(return_value=None))
-    monkeypatch.setattr(placas_route, "lookup_address", AsyncMock(return_value=None))
+    from src.infrastructure.services import geocoding
+
+    real_async_client = httpx.AsyncClient
+    sem_endereco = httpx.MockTransport(
+        lambda request: httpx.Response(200, json={"error": "Unable to geocode"})
+    )
+
+    def offline_client(*args, transport=None, **kwargs):
+        return real_async_client(*args, transport=transport or sem_endereco, **kwargs)
+
+    monkeypatch.setattr(geocoding.httpx, "AsyncClient", offline_client)

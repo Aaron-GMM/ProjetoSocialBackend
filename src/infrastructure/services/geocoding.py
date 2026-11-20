@@ -1,21 +1,44 @@
-"""Geocodificação reversa (coordenadas → endereço legível) via Nominatim (OSM).
+"""Geocodificação reversa (coordenadas → endereço legível).
+
+Fonte principal: base local de endereços oficiais de Quixadá (IBGE/Correios,
+ver ``src/infrastructure/services/cnefe.py``):
+- Bairro: limites oficiais do IBGE (bairro na sede, distrito na zona rural).
+- Rua e CEP: endereço do CNEFE mais próximo, se a até
+  ``GEOCODING_LOCAL_RAIO_M`` (150 m).
+
+Fallback: Nominatim (OSM).
+- Na área coberta pela base, mas sem endereço próximo, só a rua vem do
+  Nominatim; o bairro e o CEP dele são descartados (em Quixadá o OSM não tem
+  limites de bairro e conhece poucos CEPs genéricos — eram palpites).
+- Fora da área coberta, o resultado do Nominatim é usado inteiro.
 
 O serviço é tolerante a falhas (graceful degradation): qualquer problema com o
 provedor externo (timeout, falha de rede, rate limit, resposta inválida ou
-coordenada sem endereço) resulta em ``None`` e é apenas registrado em log,
-nunca propagado para quem chamou. Assim o cadastro de placas não depende da
-disponibilidade do provedor.
+coordenada sem endereço) resulta em ``None`` em ``reverse_geocode`` e é apenas
+registrado em log. Assim o cadastro de placas não depende do provedor.
 """
 
 import logging
 import re
 from collections.abc import Iterable
+from dataclasses import replace
 from typing import Any
 
 import httpx
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.application.schemas.placa_schema import EnderecoSugerido
 from src.core.config import settings
+from src.infrastructure.database.functions.endereco_referencia import (
+    buscar_divisoes,
+    buscar_vizinhos,
+)
+from src.infrastructure.services.cnefe import (
+    MUNICIPIOS,
+    EnderecoEscolhido,
+    escolher_endereco,
+    resolver_bairro,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -92,8 +115,53 @@ class GeocodingUnavailableError(Exception):
     """O provedor de geocodificação não respondeu de forma utilizável."""
 
 
-async def lookup_address(latitude: float, longitude: float) -> EnderecoSugerido | None:
-    """Consulta o provedor de geocodificação reversa para as coordenadas.
+async def lookup_local(
+    db: AsyncSession, latitude: float, longitude: float
+) -> EnderecoEscolhido | None:
+    """Sugere o endereço a partir da base local de endereços oficiais.
+
+    - Bairro: limite oficial que contém o ponto (bairro ou, na zona rural,
+      distrito); na sede fora dos bairros oficiais, o bairro mais frequente
+      entre os vizinhos (ex.: Cedro).
+    - Rua e CEP: do endereço do CNEFE mais próximo, se estiver a até
+      ``GEOCODING_LOCAL_RAIO_M``; caso contrário o resultado é parcial
+      (``completo=False``) e a rua deve vir de outra fonte.
+
+    Retorna ``None`` fora da área coberta (sem divisão oficial que contenha o
+    ponto e sem endereço a até ``GEOCODING_LOCAL_RAIO_BAIRRO_M``).
+    """
+    divisoes = await buscar_divisoes(db, latitude, longitude)
+    vizinhos = await buscar_vizinhos(
+        db,
+        latitude,
+        longitude,
+        limite=settings.GEOCODING_LOCAL_VIZINHOS,
+        raio_m=settings.GEOCODING_LOCAL_RAIO_BAIRRO_M,
+    )
+    escolhido = escolher_endereco(
+        vizinhos, raio_endereco_m=settings.GEOCODING_LOCAL_RAIO_M
+    )
+    municipio = MUNICIPIOS.get(divisoes.codigo_municipio or "")
+    if escolhido is None and municipio is None:
+        return None
+
+    bairro = resolver_bairro(divisoes, escolhido.bairro if escolhido else None)
+    if escolhido is None:
+        return EnderecoEscolhido(
+            logradouro=None,
+            bairro=bairro,
+            cep=None,
+            cidade=municipio[0],
+            estado=municipio[1],
+            completo=False,
+        )
+    return replace(escolhido, bairro=bairro)
+
+
+async def lookup_nominatim(
+    latitude: float, longitude: float
+) -> EnderecoSugerido | None:
+    """Consulta o Nominatim (OSM) para as coordenadas.
 
     Returns:
         O endereço encontrado ou ``None`` se não houver endereço para o ponto.
@@ -165,13 +233,62 @@ async def lookup_address(latitude: float, longitude: float) -> EnderecoSugerido 
     return endereco
 
 
-async def reverse_geocode(latitude: float, longitude: float) -> EnderecoSugerido | None:
+async def lookup_address(
+    latitude: float, longitude: float, db: AsyncSession | None = None
+) -> EnderecoSugerido | None:
+    """Sugere o endereço: base local do CNEFE primeiro, depois o Nominatim.
+
+    Raises:
+        GeocodingUnavailableError: a base local não cobre o ponto e o
+            Nominatim está indisponível.
+    """
+    local = await lookup_local(db, latitude, longitude) if db is not None else None
+    if local is not None and local.completo:
+        return _to_sugerido(local)
+
+    try:
+        externo = await lookup_nominatim(latitude, longitude)
+    except GeocodingUnavailableError:
+        if local is None:
+            raise
+        # Sem provedor externo, o bairro da base local ainda é útil.
+        return _to_sugerido(local)
+
+    if local is None:
+        return externo
+    # Área coberta pela base local, mas sem endereço próximo (ex.: avenida
+    # longa, loteamento novo): a rua vem do Nominatim (geometria da via) e o
+    # bairro da base local. O bairro e o CEP do Nominatim são descartados:
+    # em Quixadá eles são palpites por proximidade (sem limites de bairro no
+    # OSM e poucos CEPs genéricos), justamente o problema que a base resolve.
+    return EnderecoSugerido(
+        logradouro=externo.logradouro if externo else None,
+        bairro=local.bairro,
+        cep=None,
+        cidade=local.cidade,
+        estado=local.estado,
+    )
+
+
+def _to_sugerido(escolhido: EnderecoEscolhido) -> EnderecoSugerido:
+    return EnderecoSugerido(
+        logradouro=escolhido.logradouro,
+        bairro=escolhido.bairro,
+        cep=escolhido.cep,
+        cidade=escolhido.cidade,
+        estado=escolhido.estado,
+    )
+
+
+async def reverse_geocode(
+    latitude: float, longitude: float, db: AsyncSession | None = None
+) -> EnderecoSugerido | None:
     """Versão tolerante a falhas de :func:`lookup_address`.
 
-    Nunca levanta exceção: se o provedor estiver indisponível ou não houver
-    endereço para o ponto, retorna ``None`` silenciosamente.
+    Nunca levanta exceção por falha do provedor externo: se ele estiver
+    indisponível ou não houver endereço para o ponto, retorna ``None``.
     """
     try:
-        return await lookup_address(latitude, longitude)
+        return await lookup_address(latitude, longitude, db)
     except GeocodingUnavailableError:
         return None

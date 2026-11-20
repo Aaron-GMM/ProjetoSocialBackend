@@ -120,6 +120,12 @@ jobs:
       - name: Validar Seed de Quixadá
         run: python scripts/seed_quixada.py
 
+      - name: Validar Seed da Base de Endereços Oficiais (IBGE/Correios)
+        run: |
+          python scripts/seed_base_enderecos.py
+          # segunda execução garante que o seed é idempotente
+          python scripts/seed_base_enderecos.py
+
   testes:
     name: testes
     runs-on: ubuntu-latest
@@ -232,6 +238,9 @@ jobs:
 
             echo "🗺 Garantindo seed do polígono de Quixadá ..."
             docker compose exec -T api python scripts/seed_quixada.py
+
+            echo "🏠 Garantindo seed da base de endereços oficiais (IBGE/Correios)..."
+            docker compose exec -T api python scripts/seed_base_enderecos.py
 
             echo "Limpando imagens Docker antigas não utilizadas..."
             docker image prune -f

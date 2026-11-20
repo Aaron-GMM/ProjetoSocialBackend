@@ -199,9 +199,11 @@ async def _get_placa_row_or_404(db: AsyncSession, placa_id: UUID) -> Any:
         "- Valida o tipo da imagem (`image/jpeg`, `image/png`, `image/webp`).\n"
         "- Realiza o upload da foto para o MinIO antes do commit no banco.\n"
         "- Se `logradouro`, `bairro` ou `cep` não forem enviados, o backend tenta "
-        "preenchê-los via geocodificação reversa das coordenadas. Os valores "
-        "enviados pelo agente têm prioridade. Se o provedor de geocodificação "
-        "estiver indisponível, a placa é cadastrada normalmente sem esses campos.\n"
+        "preenchê-los via geocodificação reversa das coordenadas (bairros, "
+        "distritos e endereços oficiais do IBGE/Correios e, fora deles, "
+        "Nominatim/OSM). Os valores "
+        "enviados pelo agente têm prioridade. Se não houver sugestão, a placa é "
+        "cadastrada normalmente sem esses campos.\n"
         "- A Placa, o Endereço e o evento `CRIACAO` são inseridos em uma única "
         "transação atômica (Append-Only). Caso o banco falhe, o arquivo órfão "
         "é removido do MinIO."
@@ -252,7 +254,9 @@ async def create_placa(
     # nenhum arquivo é enviado ao MinIO à toa e o cadastro segue sem a sugestão.
     sugerido = None
     if _needs_geocoding(placa_create.endereco):
-        sugerido = await reverse_geocode(placa_create.latitude, placa_create.longitude)
+        sugerido = await reverse_geocode(
+            placa_create.latitude, placa_create.longitude, db
+        )
     endereco = _build_endereco(placa.id, placa_create.endereco, sugerido)
 
     object_name = await _upload_image(foto, file_bytes, placa.id)
@@ -402,7 +406,13 @@ async def list_estados_conservacao() -> list[PlacaTipoItem]:
         "formulário de cadastro de placa.\n\n"
         "**Regras de Negócio:**\n"
         "- Requer usuário autenticado.\n"
-        "- Campos não identificados pelo provedor retornam `null`.\n"
+        "- Bairro: limites oficiais do IBGE (21 bairros da sede e, na zona "
+        "rural, o distrito). Na sede fora desses limites, o bairro oficial "
+        "registrado pelos Correios (ex.: Cedro).\n"
+        "- Rua e CEP: endereço oficial mais próximo (CNEFE/IBGE, Censo 2022) "
+        "num raio de 150 m; sem endereço próximo, a rua vem do Nominatim "
+        "(OpenStreetMap) e o CEP fica `null`.\n"
+        "- Campos não identificados retornam `null`.\n"
         "- `404` quando não há endereço para as coordenadas.\n"
         "- `503` quando o provedor de geocodificação está indisponível; o "
         "formulário deve seguir com preenchimento manual."
@@ -425,10 +435,11 @@ async def get_endereco_por_coordenadas(
         float,
         Query(ge=-180, le=180, description="Longitude (WGS 84)", examples=[-39.01]),
     ],
+    db: Annotated[AsyncSession, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> EnderecoSugerido:
     try:
-        endereco = await lookup_address(latitude, longitude)
+        endereco = await lookup_address(latitude, longitude, db)
     except GeocodingUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

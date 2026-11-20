@@ -1,8 +1,14 @@
+import json
+
 import httpx
 import pytest
 
 from src.application.schemas.placa_schema import EnderecoSugerido
 from src.core.config import settings
+from src.infrastructure.database.functions.endereco_referencia import (
+    inserir_divisoes,
+    inserir_enderecos,
+)
 from src.infrastructure.services import geocoding
 
 LATITUDE = -4.9714
@@ -424,3 +430,309 @@ def test_parse_nominatim_response_ignores_non_string_values():
     result = geocoding.parse_nominatim_response(payload)
 
     assert result == EnderecoSugerido(logradouro="Beco X")
+
+
+# ---------------------------------------------------------------------------
+# Base local (CNEFE/IBGE) antes do Nominatim
+# ---------------------------------------------------------------------------
+
+
+async def inserir_referencia(db_session, linhas):
+    conn = await db_session.connection()
+    await inserir_enderecos(conn, linhas)
+    await db_session.commit()
+
+
+def referencia(cod, dlat, bairro="Centro", logradouro="Rua Rui Barbosa"):
+    return {
+        "cod_unico_endereco": cod,
+        "codigo_municipio": "2311306",
+        "codigo_distrito": "231130605",
+        "logradouro": logradouro,
+        "bairro": bairro,
+        "cep": "63900-207",
+        "cidade": "Quixadá",
+        "estado": "Ceará",
+        "lat": LATITUDE + dlat,
+        "lng": LONGITUDE,
+    }
+
+
+def nominatim_nao_pode_ser_chamado(monkeypatch):
+    def handler(request):
+        raise AssertionError("o Nominatim não deveria ser consultado")
+
+    mock_async_client(monkeypatch, handler)
+
+
+@pytest.mark.asyncio
+async def test_lookup_address_usa_base_local_sem_chamar_nominatim(
+    monkeypatch, db_session
+):
+    await inserir_referencia(
+        db_session,
+        [
+            referencia(1, 0.0001),
+            referencia(2, 0.0002, bairro="Combate", logradouro="Rua X"),
+            referencia(3, 0.0003),
+        ],
+    )
+    nominatim_nao_pode_ser_chamado(monkeypatch)
+
+    result = await geocoding.lookup_address(LATITUDE, LONGITUDE, db_session)
+
+    assert result == EnderecoSugerido(
+        logradouro="Rua Rui Barbosa",
+        bairro="Centro",
+        cep="63900-207",
+        cidade="Quixadá",
+        estado="Ceará",
+    )
+
+
+@pytest.mark.asyncio
+async def test_lookup_address_cai_no_nominatim_fora_do_raio(monkeypatch, db_session):
+    await inserir_referencia(db_session, [referencia(1, 0.01)])  # ~1,1 km
+    captured = mock_async_client(monkeypatch, json_handler(NOMINATIM_FULL_RESPONSE))
+
+    result = await geocoding.lookup_address(LATITUDE, LONGITUDE, db_session)
+
+    assert "request" in captured
+    assert result.logradouro == "Rua Basílio Pinto"
+
+
+@pytest.mark.asyncio
+async def test_lookup_address_cai_no_nominatim_com_base_vazia(monkeypatch, db_session):
+    captured = mock_async_client(monkeypatch, json_handler(NOMINATIM_FULL_RESPONSE))
+
+    result = await geocoding.lookup_address(LATITUDE, LONGITUDE, db_session)
+
+    assert "request" in captured
+    assert result.bairro == "Centro"
+
+
+@pytest.mark.asyncio
+async def test_reverse_geocode_base_local_funciona_com_provedor_fora(
+    monkeypatch, db_session
+):
+    await inserir_referencia(db_session, [referencia(1, 0.0001)])
+    mock_async_client(monkeypatch, raising_handler(httpx.ConnectError("sem rede")))
+
+    result = await geocoding.reverse_geocode(LATITUDE, LONGITUDE, db_session)
+
+    assert result is not None
+    assert result.bairro == "Centro"
+
+
+@pytest.mark.asyncio
+async def test_reverse_geocode_fora_da_base_e_provedor_fora_retorna_none(
+    monkeypatch, db_session
+):
+    mock_async_client(monkeypatch, raising_handler(httpx.ConnectError("sem rede")))
+
+    assert await geocoding.reverse_geocode(LATITUDE, LONGITUDE, db_session) is None
+    with pytest.raises(geocoding.GeocodingUnavailableError):
+        await geocoding.lookup_address(LATITUDE, LONGITUDE, db_session)
+
+
+@pytest.mark.asyncio
+async def test_lookup_local_faixas_de_distancia(monkeypatch, db_session):
+    await inserir_referencia(db_session, [referencia(1, 0.0005)])  # ~55 m
+
+    monkeypatch.setattr(settings, "GEOCODING_LOCAL_RAIO_M", 60.0)
+    completo = await geocoding.lookup_local(db_session, LATITUDE, LONGITUDE)
+    assert completo.completo is True
+    assert completo.logradouro == "Rua Rui Barbosa"
+
+    monkeypatch.setattr(settings, "GEOCODING_LOCAL_RAIO_M", 50.0)
+    parcial = await geocoding.lookup_local(db_session, LATITUDE, LONGITUDE)
+    assert parcial.completo is False
+    assert (parcial.logradouro, parcial.cep) == (None, None)
+    assert parcial.bairro == "Centro"
+
+    monkeypatch.setattr(settings, "GEOCODING_LOCAL_RAIO_BAIRRO_M", 50.0)
+    assert await geocoding.lookup_local(db_session, LATITUDE, LONGITUDE) is None
+
+
+# Ponto a ~300 m do endereço de referência: só o bairro vem da base local.
+DLAT_300M = 0.0027
+
+
+@pytest.mark.asyncio
+async def test_lookup_address_faixa_intermediaria_combina_fontes(
+    monkeypatch, db_session
+):
+    await inserir_referencia(db_session, [referencia(1, DLAT_300M, bairro="Herval")])
+    mock_async_client(monkeypatch, json_handler(NOMINATIM_FULL_RESPONSE))
+
+    result = await geocoding.lookup_address(LATITUDE, LONGITUDE, db_session)
+
+    # rua do Nominatim; bairro da base local; CEP do Nominatim descartado
+    assert result == EnderecoSugerido(
+        logradouro="Rua Basílio Pinto",
+        bairro="Herval",
+        cep=None,
+        cidade="Quixadá",
+        estado="Ceará",
+    )
+
+
+@pytest.mark.asyncio
+async def test_lookup_address_faixa_intermediaria_sem_endereco_no_provedor(
+    monkeypatch, db_session
+):
+    await inserir_referencia(db_session, [referencia(1, DLAT_300M, bairro="Herval")])
+    mock_async_client(monkeypatch, json_handler({"error": "Unable to geocode"}))
+
+    result = await geocoding.lookup_address(LATITUDE, LONGITUDE, db_session)
+
+    assert result.logradouro is None
+    assert result.bairro == "Herval"
+
+
+@pytest.mark.asyncio
+async def test_lookup_address_faixa_intermediaria_com_provedor_fora(
+    monkeypatch, db_session
+):
+    await inserir_referencia(db_session, [referencia(1, DLAT_300M, bairro="Herval")])
+    mock_async_client(monkeypatch, raising_handler(httpx.ConnectError("sem rede")))
+
+    result = await geocoding.lookup_address(LATITUDE, LONGITUDE, db_session)
+
+    assert result == EnderecoSugerido(bairro="Herval", cidade="Quixadá", estado="Ceará")
+
+
+# ---------------------------------------------------------------------------
+# Limites oficiais (bairros e distritos do IBGE)
+# ---------------------------------------------------------------------------
+
+
+def quadrado(lng_min, lat_min, lng_max, lat_max):
+    return json.dumps(
+        {
+            "type": "Polygon",
+            "coordinates": [
+                [
+                    [lng_min, lat_min],
+                    [lng_max, lat_min],
+                    [lng_max, lat_max],
+                    [lng_min, lat_max],
+                    [lng_min, lat_min],
+                ]
+            ],
+        }
+    )
+
+
+def divisao(codigo, tipo, nome, geojson, sede=False):
+    return {
+        "codigo": codigo,
+        "tipo": tipo,
+        "nome": nome,
+        "codigo_municipio": "2311306",
+        "sede": sede,
+        "geojson": geojson,
+    }
+
+
+# Sede a oeste de LONGITUDE+0.01 e Juatama a leste; bairro oficial "Centro"
+# num quadrado de ~110 m ao redor do ponto de teste.
+DIVISOES = [
+    divisao(
+        "231130605",
+        "distrito",
+        "Quixadá",
+        quadrado(-39.1, -5.1, LONGITUDE + 0.01, -4.8),
+        sede=True,
+    ),
+    divisao(
+        "231130650",
+        "distrito",
+        "Juatama",
+        quadrado(LONGITUDE + 0.01, -5.1, -38.9, -4.8),
+    ),
+    divisao(
+        "2311306008",
+        "bairro",
+        "Centro",
+        quadrado(
+            LONGITUDE - 0.0005, LATITUDE - 0.0005, LONGITUDE + 0.0005, LATITUDE + 0.0005
+        ),
+    ),
+]
+
+
+async def inserir_divisoes_teste(db_session):
+    conn = await db_session.connection()
+    await inserir_divisoes(conn, DIVISOES)
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_bairro_oficial_prevalece_sobre_os_vizinhos(monkeypatch, db_session):
+    await inserir_divisoes_teste(db_session)
+    # vizinhos registrados com outro bairro (ex.: perto da divisa)
+    await inserir_referencia(
+        db_session, [referencia(i, 0.0001 * i, bairro="Combate") for i in (1, 2, 3)]
+    )
+    nominatim_nao_pode_ser_chamado(monkeypatch)
+
+    result = await geocoding.lookup_address(LATITUDE, LONGITUDE, db_session)
+
+    assert result.bairro == "Centro"
+    assert result.logradouro == "Rua Rui Barbosa"
+    assert result.cep == "63900-207"
+
+
+@pytest.mark.asyncio
+async def test_sede_fora_dos_bairros_usa_bairro_dos_vizinhos(monkeypatch, db_session):
+    await inserir_divisoes_teste(db_session)
+    lat = LATITUDE + 0.005  # fora do "Centro", ainda na sede
+    await inserir_referencia(
+        db_session,
+        [{**referencia(i, 0.005 + 0.0001 * i, bairro="Cedro")} for i in (1, 2)],
+    )
+    nominatim_nao_pode_ser_chamado(monkeypatch)
+
+    result = await geocoding.lookup_address(lat, LONGITUDE, db_session)
+
+    assert result.bairro == "Cedro"
+
+
+@pytest.mark.asyncio
+async def test_distrito_rural_sem_endereco_proximo(monkeypatch, db_session):
+    await inserir_divisoes_teste(db_session)
+    payload = {
+        "address": {
+            "road": "Estrada Vicinal",
+            "village": "Palpite do OSM",
+            "town": "Quixadá",
+            "postcode": "63900-209",
+        }
+    }
+    mock_async_client(monkeypatch, json_handler(payload))
+
+    result = await geocoding.lookup_address(LATITUDE, LONGITUDE + 0.05, db_session)
+
+    # bairro = distrito oficial; rua do Nominatim; CEP do Nominatim descartado
+    assert result == EnderecoSugerido(
+        logradouro="Estrada Vicinal",
+        bairro="Juatama",
+        cep=None,
+        cidade="Quixadá",
+        estado="Ceará",
+    )
+
+
+@pytest.mark.asyncio
+async def test_distrito_rural_com_provedor_fora_ainda_sugere_distrito(
+    monkeypatch, db_session
+):
+    await inserir_divisoes_teste(db_session)
+    mock_async_client(monkeypatch, raising_handler(httpx.ConnectError("sem rede")))
+
+    result = await geocoding.lookup_address(LATITUDE, LONGITUDE + 0.05, db_session)
+
+    assert result == EnderecoSugerido(
+        bairro="Juatama", cidade="Quixadá", estado="Ceará"
+    )
