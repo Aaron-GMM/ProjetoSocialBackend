@@ -120,6 +120,12 @@ jobs:
       - name: Validar Seed de Quixadá
         run: python scripts/seed_quixada.py
 
+      - name: Validar Seed da Base de Endereços Oficiais (IBGE/Correios)
+        run: |
+          python scripts/seed_base_enderecos.py
+          # segunda execução garante que o seed é idempotente
+          python scripts/seed_base_enderecos.py
+
   testes:
     name: testes
     runs-on: ubuntu-latest

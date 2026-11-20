@@ -39,6 +39,11 @@ from src.infrastructure.services.geocoding import (
     lookup_address,
     reverse_geocode,
 )
+from src.infrastructure.services.padronizacao_endereco import (
+    padronizar_bairro,
+    padronizar_cep,
+    padronizar_logradouro,
+)
 from src.infrastructure.storage.minio_client import StorageError, minio_service
 
 QUIXADA_CODIGO_IBGE = "2311306"
@@ -139,6 +144,27 @@ async def _upload_image(foto: UploadFile, file_bytes: bytes, placa_id: UUID) -> 
         ) from exc
 
 
+async def _padronizar_endereco(
+    db: AsyncSession,
+    endereco: EnderecoCreate | None,
+    latitude: float,
+    longitude: float,
+) -> EnderecoCreate | None:
+    """Coloca rua, bairro e CEP informados pelo agente no padrão oficial, quando há
+    correspondência (ver ``padronizacao_endereco``)."""
+    if endereco is None:
+        return None
+    return endereco.model_copy(
+        update={
+            "logradouro": await padronizar_logradouro(
+                db, endereco.logradouro, latitude, longitude
+            ),
+            "bairro": await padronizar_bairro(db, endereco.bairro),
+            "cep": padronizar_cep(endereco.cep),
+        }
+    )
+
+
 def _needs_geocoding(endereco: EnderecoCreate | None) -> bool:
     """Indica se algum campo geocodificável (logradouro/bairro/cep) está vazio."""
     if endereco is None:
@@ -199,9 +225,15 @@ async def _get_placa_row_or_404(db: AsyncSession, placa_id: UUID) -> Any:
         "- Valida o tipo da imagem (`image/jpeg`, `image/png`, `image/webp`).\n"
         "- Realiza o upload da foto para o MinIO antes do commit no banco.\n"
         "- Se `logradouro`, `bairro` ou `cep` não forem enviados, o backend tenta "
-        "preenchê-los via geocodificação reversa das coordenadas. Os valores "
-        "enviados pelo agente têm prioridade. Se o provedor de geocodificação "
-        "estiver indisponível, a placa é cadastrada normalmente sem esses campos.\n"
+        "preenchê-los via geocodificação reversa das coordenadas (bairros, "
+        "distritos e endereços oficiais do IBGE/Correios e, fora deles, "
+        "Nominatim/OSM). Os valores "
+        "enviados pelo agente têm prioridade. Se não houver sugestão, a placa é "
+        "cadastrada normalmente sem esses campos.\n"
+        "- Rua e bairro informados pelo agente são gravados na grafia oficial "
+        "quando correspondem a um nome oficial (ex.: `centro` → `Centro`, "
+        "`Rua Benjamim Constant` → `Rua Benjamin Constant`); caso contrário, "
+        "são mantidos como digitados.\n"
         "- A Placa, o Endereço e o evento `CRIACAO` são inseridos em uma única "
         "transação atômica (Append-Only). Caso o banco falhe, o arquivo órfão "
         "é removido do MinIO."
@@ -248,11 +280,17 @@ async def create_placa(
         ),
     )
 
+    placa_create.endereco = await _padronizar_endereco(
+        db, placa_create.endereco, placa_create.latitude, placa_create.longitude
+    )
+
     # Geocodificação reversa antes do upload: se o provedor demorar/falhar,
     # nenhum arquivo é enviado ao MinIO à toa e o cadastro segue sem a sugestão.
     sugerido = None
     if _needs_geocoding(placa_create.endereco):
-        sugerido = await reverse_geocode(placa_create.latitude, placa_create.longitude)
+        sugerido = await reverse_geocode(
+            placa_create.latitude, placa_create.longitude, db
+        )
     endereco = _build_endereco(placa.id, placa_create.endereco, sugerido)
 
     object_name = await _upload_image(foto, file_bytes, placa.id)
@@ -402,7 +440,13 @@ async def list_estados_conservacao() -> list[PlacaTipoItem]:
         "formulário de cadastro de placa.\n\n"
         "**Regras de Negócio:**\n"
         "- Requer usuário autenticado.\n"
-        "- Campos não identificados pelo provedor retornam `null`.\n"
+        "- Bairro: limites oficiais do IBGE (21 bairros da sede e, na zona "
+        "rural, o distrito). Na sede fora desses limites, o bairro oficial "
+        "registrado pelos Correios (ex.: Cedro).\n"
+        "- Rua e CEP: endereço oficial mais próximo (CNEFE/IBGE, Censo 2022) "
+        "num raio de 150 m; sem endereço próximo, a rua vem do Nominatim "
+        "(OpenStreetMap) e o CEP fica `null`.\n"
+        "- Campos não identificados retornam `null`.\n"
         "- `404` quando não há endereço para as coordenadas.\n"
         "- `503` quando o provedor de geocodificação está indisponível; o "
         "formulário deve seguir com preenchimento manual."
@@ -425,10 +469,11 @@ async def get_endereco_por_coordenadas(
         float,
         Query(ge=-180, le=180, description="Longitude (WGS 84)", examples=[-39.01]),
     ],
+    db: Annotated[AsyncSession, Depends(get_session)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> EnderecoSugerido:
     try:
-        endereco = await lookup_address(latitude, longitude)
+        endereco = await lookup_address(latitude, longitude, db)
     except GeocodingUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -492,7 +537,9 @@ async def list_placas(
         "**Regras de Negócio:**\n"
         "- Requer usuário autenticado (Agente ou Administrador).\n"
         "- Se `foto` for enviada, substitui a foto do evento mais recente e "
-        "remove o arquivo antigo do MinIO."
+        "remove o arquivo antigo do MinIO.\n"
+        "- Rua e bairro informados são gravados na grafia oficial quando "
+        "correspondem a um nome oficial; caso contrário, como digitados."
     ),
     response_description="Placa atualizada com endereço e último evento.",
 )
@@ -515,7 +562,10 @@ async def update_placa(
     to_save: list[Any] = [placa]
 
     if placa_update.endereco is not None:
-        endereco_data = placa_update.endereco.model_dump(exclude_none=True)
+        endereco_padronizado = await _padronizar_endereco(
+            db, placa_update.endereco, row.latitude, row.longitude
+        )
+        endereco_data = endereco_padronizado.model_dump(exclude_none=True)
         if endereco is None:
             endereco = Enderecos(
                 placa_id=placa.id,

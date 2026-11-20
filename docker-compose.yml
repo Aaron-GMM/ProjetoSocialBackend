@@ -31,6 +31,7 @@ services:
     command: >
       sh -c "alembic upgrade head &&
       python scripts/seed_quixada.py &&
+      python scripts/seed_base_enderecos.py &&
       uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload"
 
   db:

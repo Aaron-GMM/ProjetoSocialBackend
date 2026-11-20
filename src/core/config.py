@@ -39,5 +39,16 @@ class Settings(BaseSettings):
     GEOCODING_TIMEOUT: float = 3.0
     GEOCODING_USER_AGENT: str = "CacaPlacaAPI/0.1 (Projeto Social Quixada)"
 
+    # Geocodificação local (base CNEFE/IBGE):
+    # - até RAIO_M do endereço mais próximo: rua, bairro e CEP vêm da base;
+    # - até RAIO_BAIRRO_M: só o bairro vem da base (rua vem do Nominatim);
+    # - VIZINHOS: quantidade de endereços usados na votação do bairro.
+    GEOCODING_LOCAL_RAIO_M: float = 150.0
+    GEOCODING_LOCAL_RAIO_BAIRRO_M: float = 500.0
+    GEOCODING_LOCAL_VIZINHOS: int = 7
+    # Raio para padronizar um nome de rua (Nominatim ou digitado pelo agente)
+    # com a grafia oficial da mesma rua no IBGE.
+    GEOCODING_PADRONIZACAO_RAIO_M: float = 300.0
+
 
 settings = Settings()

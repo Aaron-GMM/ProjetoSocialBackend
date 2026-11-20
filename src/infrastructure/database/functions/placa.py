@@ -1,3 +1,4 @@
+import unicodedata
 from typing import Any
 from uuid import UUID
 
@@ -22,6 +23,30 @@ from src.infrastructure.database.functions.evento import (
     soft_delete_evento,
     update_evento,
 )
+
+# Busca de texto em rua/bairro indiferente a acentos e maiúsculas: os nomes
+# são gravados na grafia oficial ("Rua Basílio Pinto", "Putiú"), mas o
+# usuário costuma buscar sem acento ("basilio", "putiu").
+_COM_ACENTO = "áàâãäéèêëíìîïóòôõöúùûüçñÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑ"
+_SEM_ACENTO = "aaaaaeeeeiiiiooooouuuucnaaaaaeeeeiiiiooooouuuucn"
+
+
+def _normalizar_termo(termo: str) -> str:
+    # NFD separa apenas marcas diacríticas (ex.: "í" -> "i" + acento), sem
+    # alterar caracteres não-diacríticos como "º" (ex.: "1º de Maio").
+    sem_acento = "".join(
+        c
+        for c in unicodedata.normalize("NFD", termo)
+        if unicodedata.category(c) != "Mn"
+    ).lower()
+    return sem_acento.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _contem_sem_acento(coluna: Any, termo: str) -> Any:
+    """``coluna`` contém ``termo``, ignorando acentos e maiúsculas."""
+    coluna_normalizada = func.translate(func.lower(coluna), _COM_ACENTO, _SEM_ACENTO)
+    return coluna_normalizada.like(f"%{_normalizar_termo(termo)}%", escape="\\")
+
 
 __all__ = [
     "count_active_eventos_placa",
@@ -165,8 +190,8 @@ async def list_placas(
 
         stmt = stmt.where(
             or_(
-                Enderecos.logradouro.ilike(f"%{termo_busca}%"),
-                Enderecos.bairro.ilike(f"%{termo_busca}%"),
+                _contem_sem_acento(Enderecos.logradouro, termo_busca),
+                _contem_sem_acento(Enderecos.bairro, termo_busca),
                 *condicoes_codigo,
             )
         )
@@ -185,9 +210,9 @@ async def list_placas(
             )
 
     if params.bairro:
-        stmt = stmt.where(Enderecos.bairro.ilike(f"%{params.bairro}%"))
+        stmt = stmt.where(_contem_sem_acento(Enderecos.bairro, params.bairro))
     if params.logradouro:
-        stmt = stmt.where(Enderecos.logradouro.ilike(f"%{params.logradouro}%"))
+        stmt = stmt.where(_contem_sem_acento(Enderecos.logradouro, params.logradouro))
     if params.estado_conservacao:
         stmt = stmt.where(
             ultimo_evento_sub.c.ev_estado_conservacao == params.estado_conservacao
